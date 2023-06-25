@@ -33,12 +33,12 @@ import {
 // This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig.
 //
 // /   w   [oooo]   i   \
-// \ s a d [oooo] j k l /
+// \ a s d [oooo] j k l /
 //
 // w = Forward      i = Pew Pew
 // s = Go Left      j = Look Left
 // d = Go Right     l = Look Right
-// a = Backward     k = 
+// a = Backward     k =
 //
 
 // -- Game Globals --
@@ -74,6 +74,12 @@ interface Bullet {
 }
 var bullets: Bullet[] = [];
 
+interface Explosion {
+  position: Vec3;
+  sizeScalar: number;
+}
+var explosions: Explosion[] = [];
+
 // -- Spawn Functions --
 
 function spawnEnemy(position: Vec3) {
@@ -94,6 +100,14 @@ function spawnBullet(origin: Vec3, direction: Vec3) {
     position: origin,
   };
   bullets.push(bullet);
+}
+
+function spawnExplosion(position: Vec3) {
+  let explosion = {
+    position,
+    sizeScalar: 0.5,
+  };
+  explosions.push(explosion);
 }
 
 // -- Tick Functions --
@@ -129,13 +143,14 @@ function tickEnemies() {
     }
     if (hitByBullet(enemy.position)) {
       enemy.health -= BULLET_DAMAGE;
+      spawnExplosion(enemy.position);
     }
   }
   enemies = enemies.filter((enemy) => enemy.health > 0);
 }
 
 function hitByBullet(agent: Vec3): boolean {
-  const HITBOX_RADIUS = 1;
+  const HITBOX_RADIUS = 1.5;
   let newBullets = bullets.filter((bullet) => {
     return vecDistance(agent, bullet.position) >= HITBOX_RADIUS;
   });
@@ -145,9 +160,22 @@ function hitByBullet(agent: Vec3): boolean {
   return ret;
 }
 
+function tickExplosions() {
+  const EXPLOSION_MAX_SIZE = 3.0;
+  const EXPLOSION_GROWTH_INCREMENT = 0.6;
+  for (let i in explosions) {
+    let explosion = explosions[i];
+    explosion.sizeScalar += EXPLOSION_GROWTH_INCREMENT;
+  }
+  explosions = explosions.filter(
+    (explosion) => explosion.sizeScalar <= EXPLOSION_MAX_SIZE
+  );
+}
+
 function tick() {
   tickEnemies();
   tickBullets();
+  tickExplosions();
 }
 
 // -- Game Start --
@@ -242,6 +270,34 @@ function render(ticks: number) {
       viewOrigin: cameraPosition,
       borderColor: "F",
       colors: "F",
+      triangles: verticesCube(),
+      projection: {
+        fov_rad: Math.PI / 2.0,
+        near: 0.1,
+        far: 100.0,
+      },
+      modelViewMatrix: mv,
+      cullScalar: 1,
+    };
+    fbRender(fb, render_pass as any);
+  }
+
+  for (let i in explosions) {
+    let explosion = explosions[i];
+
+    let mv = mat4Identity();
+    mv = mat4Translate(mv, explosion.position);
+    mv = mat4Translate(mv, [
+      cameraPosition[0],
+      cameraPosition[1],
+      -cameraPosition[2],
+    ]);
+    mv = mat4Scale(mv, vecMulScalar([1, 1, 1], explosion.sizeScalar));
+
+    let render_pass = {
+      viewOrigin: cameraPosition,
+      borderColor: 9,
+      colors: 9,
       triangles: verticesCube(),
       projection: {
         fov_rad: Math.PI / 2.0,
