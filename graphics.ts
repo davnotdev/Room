@@ -283,6 +283,8 @@ function fbFillTriangle(
   var x02 = interpolate(a[1], a[0], c[1], c[0]);
 
   x01.pop();
+  x12.pop();
+  x02.pop();
   var x012 = x01.concat(x12);
 
   var x_left, x_right;
