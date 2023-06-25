@@ -19,9 +19,10 @@ interface ProjectionData {
 }
 
 interface RenderPass {
-  viewOrigin: Vec3;
+  cameraFront: Vec3;
+  cameraPosition: Vec3;
   triangles: number[];
-  modelViewMatrix: Mat4 | null | undefined;
+  modelMatrix: Mat4 | null | undefined;
   projection: ProjectionData | null | undefined;
   colors: Color | Color[] | null | undefined;
   borderColor: Color | null | undefined;
@@ -122,11 +123,22 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
       );
 
       let projected = vec4;
-      if (pass.modelViewMatrix) {
-        let modelViewMatrix = pass.modelViewMatrix!;
-        projected = mat4MulVec4(modelViewMatrix, projected);
+
+      let modelView = null;
+      modelView = pass.modelMatrix;
+      let view = mat4GetLookAt(
+        pass.cameraPosition,
+        vecAddVec(pass.cameraPosition, pass.cameraFront),
+        [0, 1, 0]
+      );
+      if (modelView != null) {
+        modelView = mat4MulMat4(modelView, view);
+      } else {
+        modelView = view;
       }
-      projected = mat4MulVec4(projection, projected);
+      modelView = mat4MulMat4(modelView, projection);
+      projected = mat4MulVec4(modelView, projected);
+      // projected = mat4MulVec4(projection, projected);
 
       projected = vec4ScaleWithW(projected);
 
@@ -163,7 +175,7 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
     );
 
     let viewToVertex = vecNormalize(
-      vecAddVec(vertexA, vecMulScalar(pass.viewOrigin, -1))
+      vecAddVec(vertexA, vecMulScalar(pass.cameraPosition, -1))
     );
 
     let dot = vecDot(normal, viewToVertex);
@@ -356,33 +368,9 @@ function mat4Rotate(mat: Mat4, angle: number, rot: Vec3): Mat4 {
       0.0,
     ],
     [0.0, 0.0, 0.0, 1.0],
-  ];
+  ] as Mat4;
 
-  let result = mat4Identity();
-  result[0] = vecAddVec(
-    vecAddVec(
-      vecMulScalar(mat[0], rot_mat[0][0]),
-      vecMulScalar(mat[1], rot_mat[0][1])
-    ),
-    vecMulScalar(mat[2], rot_mat[0][2])
-  );
-  result[1] = vecAddVec(
-    vecAddVec(
-      vecMulScalar(mat[0], rot_mat[1][0]),
-      vecMulScalar(mat[1], rot_mat[1][1])
-    ),
-    vecMulScalar(mat[2], rot_mat[1][2])
-  );
-  result[2] = vecAddVec(
-    vecAddVec(
-      vecMulScalar(mat[0], rot_mat[2][0]),
-      vecMulScalar(mat[1], rot_mat[2][1])
-    ),
-    vecMulScalar(mat[2], rot_mat[2][2])
-  );
-  result[3] = mat[3];
-
-  return result;
+  return mat4MulMat4(mat, rot_mat);
 }
 
 function mat4GetProjection(
@@ -397,6 +385,38 @@ function mat4GetProjection(
     [0.0, 0.0, far / (far - near), 1.0],
     [0.0, 0.0, (-far * near) / (far - near), 0.0],
   ];
+}
+
+function mat4GetLookAt(position: Vec3, center: Vec3, up: Vec3): Mat4 {
+  let dir = vecSubVec(center, position);
+  let right = vecNormalize(vec3CrossProduct(up, dir));
+  let matUp = vec3CrossProduct(dir, right);
+
+  return [
+    [right[0], matUp[0], dir[0], 0],
+    [right[1], matUp[1], dir[1], 0],
+    [right[2], matUp[2], dir[2], 0],
+    [
+      -vecDot(position, right),
+      -vecDot(position, matUp),
+      -vecDot(position, dir),
+      1,
+    ],
+  ];
+}
+
+function mat4MulMat4(b: Mat4, a: Mat4): Mat4 {
+  let result = mat4Identity();
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      result[r][c] =
+        b[r][0] * a[0][c] +
+        b[r][1] * a[1][c] +
+        b[r][2] * a[2][c] +
+        b[r][3] * a[3][c];
+    }
+  }
+  return result;
 }
 
 function mat4MulVec4(mat: Mat4, vec: Vec4): Vec4 {
@@ -459,11 +479,7 @@ function vecSubVec<V extends Vec3 | Vec4>(a: V, b: V): V {
 }
 
 function vecDistance<V extends Vec3 | Vec4>(a: V, b: V): number {
-  let result = Array.from(a) as V;
-  for (let i = 0; i < a.length; i++) {
-    result[i] = Math.abs(a[i] - b[i]);
-  }
-  return vecLength(result);
+  return vecLength(vecSubVec(b, a));
 }
 
 function vecAddScalar<V extends Vec3 | Vec4>(v: V, s: number): V {
@@ -483,8 +499,8 @@ function vecMulScalar<V extends Vec3 | Vec4>(a: V, b: number): V {
 }
 
 function vecNormalize<V extends Vec3 | Vec4>(v: V): V {
-  let length = vecLength(v);
-  return vecMulScalar(v, length);
+  let length = vecLength(v) + 0.0001;
+  return vecMulScalar(v, 1 / length);
 }
 
 function vecDot<V extends Vec3 | Vec4>(a: V, b: V): number {
@@ -509,6 +525,7 @@ export {
   fbDrawLine,
   fbClearColor,
   fbRender,
+  mat4MulMat4,
   mat4MulVec4,
   mat4Scale,
   mat4Rotate,
@@ -520,6 +537,7 @@ export {
   vecDistance,
   vecMulScalar,
   vecNormalize,
+  vec3CrossProduct,
   type Render,
   type RenderPass,
   type ProjectionData,

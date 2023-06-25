@@ -14,6 +14,7 @@ import {
   vecSubVec,
   vecAddVec,
   vecNormalize,
+  vec3CrossProduct,
 } from "./graphics";
 
 //
@@ -57,12 +58,14 @@ interface Player {
   velocity: Vec3;
   direction: Vec3;
   bobTick: number;
+  yaw: number;
 }
 const player: Player = {
   position: [0, 0, 0],
   velocity: [0, 0, 0],
-  direction: [0, 0, 1],
+  direction: [0, 0, 0],
   bobTick: 0,
+  yaw: 0,
 };
 
 interface Enemy {
@@ -118,12 +121,16 @@ function spawnExplosion(position: Vec3) {
 // -- Tick Functions --
 
 function tickPlayer() {
-  const PLAYER_FRICTION_SCALAR = 0.8;
+  player.direction[0] = Math.cos(player.yaw);
+  player.direction[2] = Math.sin(player.yaw);
+  player.direction = vecNormalize(player.direction);
+
+  const PLAYER_FRICTION_SCALAR = 0.01;
+  player.velocity = vecAddVec(
+    player.velocity,
+    vecMulScalar(vecNormalize(player.velocity), -PLAYER_FRICTION_SCALAR)
+  );
   player.position = vecAddVec(player.position, player.velocity);
-  player.velocity = vecAddVec(player.velocity, vecMulScalar(
-    vecNormalize(vecAddVec(player.velocity, [0, 0, 0])),
-    -PLAYER_FRICTION_SCALAR
-  ));
 }
 
 function tickBullets() {
@@ -202,8 +209,10 @@ function init(api: WebEngineAPI) {
   api.onInput("d", controlRight);
 
   api.onInput("i", controlPew);
+  api.onInput("j", controlLookLeft);
+  api.onInput("l", controlLookRight);
 
-  spawnEnemy([0, 0, 50]);
+  spawnEnemy([6, 0, 0]);
 }
 
 // -- Controls --
@@ -222,47 +231,42 @@ const PLAYER_ACCELERATION = 0.2;
 const PLAYER_MAX_VELOCITY = 0.5;
 
 function playerBob() {
-    player.bobTick += 1;
-    player.position[1] = Math.sin(player.bobTick * 0.6) * 0.08 + 0.08;
+  player.bobTick += 1;
+  player.position[1] = Math.sin(player.bobTick * 0.6) * 0.08 + 0.08;
 }
 
 function controlForward() {
-  // TODO
-playerBob();
-  player.velocity[2] = clamp(
-    player.velocity[2] + PLAYER_ACCELERATION,
-    -PLAYER_MAX_VELOCITY,
-    PLAYER_MAX_VELOCITY
+  playerBob();
+  player.velocity = vecAddVec(
+    player.velocity,
+    vecMulScalar(player.direction, PLAYER_ACCELERATION)
   );
 }
 
 function controlBackward() {
-  // TODO
-playerBob();
-  player.velocity[2] = clamp(
-    player.velocity[2] - PLAYER_ACCELERATION,
-    -PLAYER_MAX_VELOCITY,
-    PLAYER_MAX_VELOCITY
+  playerBob();
+  player.velocity = vecAddVec(
+    player.velocity,
+    vecMulScalar(player.direction, -PLAYER_ACCELERATION)
   );
 }
 
 function controlLeft() {
-  // TODO
-playerBob();
-  player.velocity[0] = clamp(
-    player.velocity[0] + PLAYER_ACCELERATION,
-    -PLAYER_MAX_VELOCITY,
-    PLAYER_MAX_VELOCITY
+  playerBob();
+  player.velocity = vecMulScalar(
+    vecAddVec(
+      player.velocity,
+      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0]))
+    ),
+    PLAYER_ACCELERATION
   );
 }
 
 function controlRight() {
-  // TODO
-playerBob();
-  player.velocity[0] = clamp(
-    player.velocity[0] - PLAYER_ACCELERATION,
-    -PLAYER_MAX_VELOCITY,
-    PLAYER_MAX_VELOCITY
+  playerBob();
+  player.velocity = vecMulScalar(
+    vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
+    -PLAYER_ACCELERATION
   );
 }
 
@@ -270,28 +274,32 @@ function controlPew() {
   spawnBullet(player.position, player.direction);
 }
 
+function controlLookLeft() {
+  player.yaw += Math.PI / 50;
+}
+
+function controlLookRight() {
+  player.yaw -= Math.PI / 50;
+}
+
 // -- Renderer --
 
 function render(ticks: number) {
   fbClearColor(fb, 0);
 
-  // TODO
   let cameraPosition = player.position;
+  let cameraFront = vecNormalize(player.direction);
 
   for (let i in enemies) {
     let enemy = enemies[i];
 
     let mv = mat4Identity();
     mv = mat4Translate(mv, enemy.position);
-    mv = mat4Translate(mv, [
-      cameraPosition[0],
-      cameraPosition[1],
-      -cameraPosition[2],
-    ]);
     mv = mat4Scale(mv, [1, 2, 1]);
 
     let render_pass = {
-      viewOrigin: cameraPosition,
+      cameraPosition,
+      cameraFront,
       borderColor: 0,
       colors: 3,
       triangles: verticesCube(),
@@ -300,7 +308,7 @@ function render(ticks: number) {
         near: 0.1,
         far: 100.0,
       },
-      modelViewMatrix: mv,
+      modelMatrix: mv,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
@@ -313,15 +321,11 @@ function render(ticks: number) {
 
     let mv = mat4Identity();
     mv = mat4Translate(mv, bullet.position);
-    mv = mat4Translate(mv, [
-      cameraPosition[0],
-      cameraPosition[1],
-      -cameraPosition[2],
-    ]);
     mv = mat4Scale(mv, [0.3, 0.3, 0.3]);
 
     let render_pass = {
-      viewOrigin: cameraPosition,
+      cameraPosition,
+      cameraFront,
       borderColor: "F",
       colors: "F",
       triangles: verticesCube(),
@@ -330,7 +334,7 @@ function render(ticks: number) {
         near: 0.1,
         far: 100.0,
       },
-      modelViewMatrix: mv,
+      modelMatrix: mv,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
@@ -341,15 +345,11 @@ function render(ticks: number) {
 
     let mv = mat4Identity();
     mv = mat4Translate(mv, explosion.position);
-    mv = mat4Translate(mv, [
-      cameraPosition[0],
-      cameraPosition[1],
-      -cameraPosition[2],
-    ]);
     mv = mat4Scale(mv, vecMulScalar([1, 1, 1], explosion.sizeScalar));
 
     let render_pass = {
-      viewOrigin: cameraPosition,
+      cameraPosition,
+      cameraFront,
       borderColor: 9,
       colors: 9,
       triangles: verticesCube(),
@@ -358,7 +358,7 @@ function render(ticks: number) {
         near: 0.1,
         far: 100.0,
       },
-      modelViewMatrix: mv,
+      modelMatrix: mv,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
