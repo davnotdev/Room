@@ -448,9 +448,11 @@ function mat4MulVec4(mat: Mat4, vec: Vec4): Vec4 {
 
 function vec4ScaleWithW(vec: Vec4): Vec4 {
   let result = Array.from(vec) as Vec4;
-  result[0] /= result[3] + 0.0001;
-  result[1] /= result[3] + 0.0001;
-  result[2] /= result[3] + 0.0001;
+  if (result[3] != 0) {
+    result[0] /= result[3];
+    result[1] /= result[3];
+    result[2] /= result[3];
+  }
   return result;
 }
 
@@ -499,7 +501,10 @@ function vecMulScalar<V extends Vec3 | Vec4>(a: V, b: number): V {
 }
 
 function vecNormalize<V extends Vec3 | Vec4>(v: V): V {
-  let length = vecLength(v) + 0.0001;
+  let length = vecLength(v);
+  if (length == 0) {
+    length += 0.00001;
+  }
   return vecMulScalar(v, 1 / length);
 }
 

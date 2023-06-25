@@ -120,12 +120,34 @@ function spawnExplosion(position: Vec3) {
 
 // -- Tick Functions --
 
+function clamp(n: number, low: number, high: number): number {
+  if (n < low) {
+    return low;
+  } else if (n > high) {
+    return high;
+  } else {
+    return n;
+  }
+}
+
 function tickPlayer() {
+  const PLAYER_MAX_VELOCITY = 0.5;
+  const PLAYER_FRICTION_SCALAR = 0.01;
+
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
   player.direction = vecNormalize(player.direction);
 
-  const PLAYER_FRICTION_SCALAR = 0.01;
+  console.log(player.direction);
+
+  for (let i = 0; i < player.velocity.length; i++) {
+    player.velocity[i] = clamp(
+      player.velocity[i],
+      -PLAYER_MAX_VELOCITY,
+      PLAYER_MAX_VELOCITY
+    );
+  }
+
   player.velocity = vecAddVec(
     player.velocity,
     vecMulScalar(vecNormalize(player.velocity), -PLAYER_FRICTION_SCALAR)
@@ -217,18 +239,7 @@ function init(api: WebEngineAPI) {
 
 // -- Controls --
 
-function clamp(n: number, low: number, high: number): number {
-  if (n < low) {
-    return low;
-  } else if (n > high) {
-    return high;
-  } else {
-    return n;
-  }
-}
-
 const PLAYER_ACCELERATION = 0.2;
-const PLAYER_MAX_VELOCITY = 0.5;
 
 function playerBob() {
   player.bobTick += 1;
