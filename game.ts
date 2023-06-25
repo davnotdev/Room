@@ -13,6 +13,7 @@ import {
   vecDistance,
   vecSubVec,
   vecAddVec,
+  vecNormalize,
 } from "./graphics";
 
 //
@@ -53,11 +54,15 @@ const fb = fbNew(TILE_X_COUNT * 16, TILE_Y_COUNT * 16);
 
 interface Player {
   position: Vec3;
+  velocity: Vec3;
   direction: Vec3;
+  bobTick: number;
 }
 const player: Player = {
   position: [0, 0, 0],
+  velocity: [0, 0, 0],
   direction: [0, 0, 1],
+  bobTick: 0,
 };
 
 interface Enemy {
@@ -105,15 +110,24 @@ function spawnBullet(origin: Vec3, direction: Vec3) {
 function spawnExplosion(position: Vec3) {
   let explosion = {
     position,
-    sizeScalar: 0.5,
+    sizeScalar: 0.2,
   };
   explosions.push(explosion);
 }
 
 // -- Tick Functions --
 
+function tickPlayer() {
+  const PLAYER_FRICTION_SCALAR = 0.8;
+  player.position = vecAddVec(player.position, player.velocity);
+  player.velocity = vecAddVec(player.velocity, vecMulScalar(
+    vecNormalize(vecAddVec(player.velocity, [0, 0, 0])),
+    -PLAYER_FRICTION_SCALAR
+  ));
+}
+
 function tickBullets() {
-  const MAX_BULLET_DISTANCE = 30;
+  const BULLET_MAX_DISTANCE = 30;
   const BULLET_SPEED = 2;
   for (let i in bullets) {
     let bullet = bullets[i];
@@ -125,7 +139,7 @@ function tickBullets() {
 
   bullets = bullets.filter(
     (bullet) =>
-      vecDistance(bullet.position, bullet.origin) <= MAX_BULLET_DISTANCE
+      vecDistance(bullet.position, bullet.origin) <= BULLET_MAX_DISTANCE
   );
 }
 
@@ -173,6 +187,7 @@ function tickExplosions() {
 }
 
 function tick() {
+  tickPlayer();
   tickEnemies();
   tickBullets();
   tickExplosions();
@@ -193,23 +208,62 @@ function init(api: WebEngineAPI) {
 
 // -- Controls --
 
+function clamp(n: number, low: number, high: number): number {
+  if (n < low) {
+    return low;
+  } else if (n > high) {
+    return high;
+  } else {
+    return n;
+  }
+}
+
+const PLAYER_ACCELERATION = 0.2;
+const PLAYER_MAX_VELOCITY = 0.5;
+
+function playerBob() {
+    player.bobTick += 1;
+    player.position[1] = Math.sin(player.bobTick * 0.6) * 0.08 + 0.08;
+}
+
 function controlForward() {
   // TODO
-  player.position[2] += 1.0;
+playerBob();
+  player.velocity[2] = clamp(
+    player.velocity[2] + PLAYER_ACCELERATION,
+    -PLAYER_MAX_VELOCITY,
+    PLAYER_MAX_VELOCITY
+  );
 }
 
 function controlBackward() {
-  player.position[2] -= 1.0;
+  // TODO
+playerBob();
+  player.velocity[2] = clamp(
+    player.velocity[2] - PLAYER_ACCELERATION,
+    -PLAYER_MAX_VELOCITY,
+    PLAYER_MAX_VELOCITY
+  );
 }
 
 function controlLeft() {
   // TODO
-  player.position[0] += 1.0;
+playerBob();
+  player.velocity[0] = clamp(
+    player.velocity[0] + PLAYER_ACCELERATION,
+    -PLAYER_MAX_VELOCITY,
+    PLAYER_MAX_VELOCITY
+  );
 }
 
 function controlRight() {
   // TODO
-  player.position[0] -= 1.0;
+playerBob();
+  player.velocity[0] = clamp(
+    player.velocity[0] - PLAYER_ACCELERATION,
+    -PLAYER_MAX_VELOCITY,
+    PLAYER_MAX_VELOCITY
+  );
 }
 
 function controlPew() {

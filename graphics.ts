@@ -519,6 +519,7 @@ export {
   vecLength,
   vecDistance,
   vecMulScalar,
+  vecNormalize,
   type Render,
   type RenderPass,
   type ProjectionData,
