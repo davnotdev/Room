@@ -9,6 +9,7 @@ import {
   mat4Scale,
   mat4Rotate,
   Vec3,
+  Color,
   vecMulScalar,
   vecDistance,
   vecSubVec,
@@ -43,7 +44,7 @@ import { verticesPerson, verticesCube } from "./models";
 // w = Forward      i = Pew Pew
 // s = Go Left      j = Look Left
 // d = Go Right     l = Look Right
-// a = Backward     k =
+// a = Backward     k = Look Behind
 //
 
 // -- Game Globals --
@@ -52,14 +53,19 @@ const FPS = 20;
 const TILE_X_COUNT = 10;
 const TILE_Y_COUNT = 8;
 
-const BULLET_DAMAGE = 999;
+const BULLET_DAMAGE = 30;
 
 const fb = fbNew(TILE_X_COUNT, TILE_Y_COUNT);
+
+const PLAYER_MAX_HEALTH = 500;
+
+const ENEMY_SPAWN_FREQUENCY = 10;
 
 interface Player {
   position: Vec3;
   velocity: Vec3;
   direction: Vec3;
+  health: number;
   bobTick: number;
   yaw: number;
 }
@@ -67,6 +73,7 @@ const player: Player = {
   position: [0, 0, 0],
   velocity: [0, 0, 0],
   direction: [1, 0, 0],
+  health: PLAYER_MAX_HEALTH,
   bobTick: 0,
   yaw: 0,
 };
@@ -74,6 +81,7 @@ const player: Player = {
 interface Enemy {
   speed: number;
   health: number;
+  color: number;
   position: Vec3;
 }
 var enemies: Enemy[] = [];
@@ -91,14 +99,79 @@ interface Explosion {
 }
 var explosions: Explosion[] = [];
 
+let startTime = 0;
+
+interface Wall {
+  rot: number;
+  scale: Vec3;
+  position: Vec3;
+  color: Color;
+}
+var walls: Wall[] = [];
+
+const MAP_MAX = 75;
+const MAP_WALL_Y = 3;
+const MAP_WALL_MAX_SIZE = 5;
+const MAP_WALL_COUNT = 30;
+
 // -- Spawn Functions --
+
+function spawnWalls() {
+  let north = {
+    rot: 0,
+    scale: [1, MAP_WALL_Y, MAP_MAX] as Vec3,
+    position: [MAP_MAX, 0, 0] as Vec3,
+    color: "1",
+  };
+  let south = {
+    rot: 0,
+    scale: [1, MAP_WALL_Y, MAP_MAX] as Vec3,
+    position: [-MAP_MAX, 0, 0] as Vec3,
+    color: "1",
+  };
+  let west = {
+    rot: 0,
+    scale: [MAP_MAX, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, MAP_MAX] as Vec3,
+    color: "1",
+  };
+  let east = {
+    rot: 0,
+    scale: [MAP_MAX, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, -MAP_MAX] as Vec3,
+    color: "1",
+  };
+
+  walls.push(north);
+  walls.push(south);
+  walls.push(west);
+  walls.push(east);
+
+  for (let i = 0; i < MAP_WALL_COUNT; i++) {
+    let scaleX = (Math.random() * MAP_WALL_MAX_SIZE) / 2 - MAP_WALL_MAX_SIZE;
+    let scaleZ = (Math.random() * MAP_WALL_MAX_SIZE) / 2 - MAP_WALL_MAX_SIZE;
+    let positionX = Math.random() * (MAP_MAX - 2) * 2 - MAP_MAX;
+    let positionZ = Math.random() * (MAP_MAX - 2) * 2 - MAP_MAX;
+
+    let wall = {
+      rot: 0,
+      scale: [scaleX, MAP_WALL_Y, scaleZ] as Vec3,
+      position: [positionX, 0, positionZ] as Vec3,
+      color: "1",
+    };
+    walls.push(wall);
+  }
+}
 
 function spawnEnemy(position: Vec3) {
   let randomSpeed = Math.random() * 2 + 0.3;
   let randomHealth = Math.random() * 50 + 30;
+  let numColors = [0, 3, 5, 7, 4, 6, 8, 9];
+  let randomColor = Math.floor(Math.random() * 8);
   let enemy = {
     speed: randomSpeed,
     health: randomHealth,
+    color: numColors[randomColor],
     position,
   };
   enemies.push(enemy);
@@ -123,19 +196,9 @@ function spawnExplosion(position: Vec3) {
 
 // -- Tick Functions --
 
-function clamp(n: number, low: number, high: number): number {
-  if (n < low) {
-    return low;
-  } else if (n > high) {
-    return high;
-  } else {
-    return n;
-  }
-}
-
 function tickPlayer() {
-  const PLAYER_MAX_VELOCITY = 0.4;
-  const PLAYER_FRICTION_SCALAR = 0.01;
+  const PLAYER_MAX_VELOCITY = 0.5;
+  const PLAYER_FRICTION_SCALAR = 0.005;
 
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
@@ -173,8 +236,8 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  const ENEMY_SPEED = 0.1;
-  const ENEMY_MAX_CLOSE_UP = 6;
+  const ENEMY_SPEED = 0.05;
+  const ENEMY_MAX_CLOSE_UP = 1.5;
   for (let i in enemies) {
     let enemy = enemies[i];
     if (vecDistance(player.position, enemy.position) >= ENEMY_MAX_CLOSE_UP) {
@@ -183,10 +246,14 @@ function tickEnemies() {
         enemy.position,
         vecMulScalar(direction, ENEMY_SPEED)
       );
+    } else {
+      player.health -= 0.1;
     }
     if (hitByBullet(enemy.position)) {
       enemy.health -= BULLET_DAMAGE;
-      spawnExplosion(enemy.position);
+      if (enemy.health <= 0) {
+        spawnExplosion(enemy.position);
+      }
     }
   }
   enemies = enemies.filter((enemy) => enemy.health > 0);
@@ -204,7 +271,7 @@ function hitByBullet(agent: Vec3): boolean {
 }
 
 function tickExplosions() {
-  const EXPLOSION_MAX_SIZE = 3.0;
+  const EXPLOSION_MAX_SIZE = 4.0;
   const EXPLOSION_GROWTH_INCREMENT = 0.6;
   for (let i in explosions) {
     let explosion = explosions[i];
@@ -216,6 +283,16 @@ function tickExplosions() {
 }
 
 function tick() {
+  startTime += 1 / FPS;
+
+  if (Math.abs(startTime % ENEMY_SPAWN_FREQUENCY) < 0.1) {
+    spawnEnemy([
+      Math.random() * MAP_MAX * 2 - MAP_MAX,
+      0,
+      Math.random() * MAP_MAX * 2 - MAP_MAX,
+    ]);
+  }
+
   tickPlayer();
   tickEnemies();
   tickBullets();
@@ -233,9 +310,11 @@ function init(api: WebEngineAPI) {
   api.onInput("i", controlPew);
   api.onInput("j", controlLookLeft);
   api.onInput("l", controlLookRight);
+  api.onInput("k", controlLookBehind);
 
   // for (let i = -10; i < 10; i++) spawnEnemy([-6, 0, i * 5]);
   spawnEnemy([6, 0, 4]);
+  spawnWalls();
 }
 
 // -- Controls --
@@ -244,7 +323,7 @@ const PLAYER_ACCELERATION = 0.1;
 
 function playerBob() {
   player.bobTick += 1;
-  player.position[1] = Math.sin(player.bobTick * 0.6) * 0.08 + 0.08;
+  player.position[1] = Math.sin(player.bobTick * 0.8) * 0.1 + 0.1;
 }
 
 function controlForward() {
@@ -297,6 +376,10 @@ function controlLookRight() {
   player.yaw -= Math.PI / 50;
 }
 
+function controlLookBehind() {
+  player.yaw -= Math.PI;
+}
+
 // -- Renderer --
 
 function render(ticks: number) {
@@ -306,19 +389,45 @@ function render(ticks: number) {
   let cameraPosition = player.position;
   let cameraFront = vecNormalize(player.direction);
 
+  for (let i in walls) {
+    let wall = walls[i];
+
+    let mv = mat4Identity();
+    mv = mat4Scale(mv, wall.scale);
+    mv = mat4Rotate(mv, wall.rot, [0, 1, 0]);
+    mv = mat4Translate(mv, wall.position);
+
+    let render_pass = {
+      cameraPosition,
+      cameraFront,
+      borderColor: "0",
+      colors: wall.color,
+      triangles: verticesCube(),
+      projection: {
+        fov_rad: Math.PI / 2.0,
+        near: 0.1,
+        far: 100.0,
+      },
+      modelMatrix: mv,
+      enableDepth: true,
+      cullScalar: 1,
+    };
+    fbRender(fb, render_pass as any);
+  }
+
   for (let i in enemies) {
     let enemy = enemies[i];
 
     let mv = mat4Identity();
     mv = mat4Scale(mv, [0.015, -0.015, 0.01]);
-    mv = mat4Rotate(mv, ticks, [0, 1, 0]);
+    mv = mat4Rotate(mv, ticks * 2 * enemy.color, [0, 1, 0]);
     mv = mat4Translate(mv, vecSubVec(enemy.position, [0, -2, 0]));
 
     let render_pass = {
       cameraPosition,
       cameraFront,
-      borderColor: 0,
-      colors: 5,
+      borderColor: enemy.color,
+      colors: enemy.color,
       triangles: verticesPerson(),
       projection: {
         fov_rad: Math.PI / 2.0,
@@ -330,8 +439,6 @@ function render(ticks: number) {
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
-    // (render_pass.colors as any) = null;
-    // fbRender(fb, render_pass as any);
   }
 
   for (let i in bullets) {
@@ -386,10 +493,22 @@ function render(ticks: number) {
 }
 
 function renderText(api: WebEngineAPI) {
-  api.addText("Hello World", {
-    x: 5,
-    y: 2,
-    color: "3",
+  let healthColor;
+  if (player.health < PLAYER_MAX_HEALTH / 2) {
+    healthColor = "3";
+  } else {
+    healthColor = "D";
+  }
+
+  api.addText(`Score: ${Math.floor(startTime)}`, {
+    x: 2,
+    y: 0,
+    color: "D",
+  });
+  api.addText(`Health: ${Math.floor(player.health)}/${PLAYER_MAX_HEALTH}`, {
+    x: 2,
+    y: 15,
+    color: healthColor,
   });
 }
 

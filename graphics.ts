@@ -174,11 +174,11 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
     if (
       vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) *
         cullScalar <
-        0 &&
-      vecDot(
-        pass.cameraFront,
-        vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
-      ) > 0
+        0 //&&
+      // vecDot(
+      //   pass.cameraFront,
+      //   vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
+      // ) > 0
     ) {
       let view = mat4GetLookAt(
         pass.cameraPosition,
