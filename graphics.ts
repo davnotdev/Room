@@ -4,6 +4,7 @@ interface Framebuffer {
   width: number;
   height: number;
   fb: Color[];
+  map: string;
 }
 
 //  Row major
@@ -29,20 +30,16 @@ interface RenderPass {
   cullScalar: number | null;
 }
 
-interface Render {
-  legends: string[][];
-  solids: string[];
-  map: string;
+function fbGetLegendIdent(tilesXCount: number, tileX: number, tileY: number) {
+  return String.fromCharCode(tileX + tilesXCount * tileY + 48);
 }
 
 function fbGetRender(
   fb: Framebuffer,
   tilesXCount: number,
   tilesYCount: number
-): Render {
+): string[][] {
   let legends = [];
-  let solids = [];
-  let map = "\n";
 
   for (let yi = 0; yi < tilesYCount; yi++) {
     for (let xi = 0; xi < tilesXCount; xi++) {
@@ -56,30 +53,37 @@ function fbGetRender(
         }
         tileSprite += "\n";
       }
-      let ident = String.fromCharCode(xi + tilesXCount * yi + 48);
-      map += ident;
-      solids.push(ident);
+      let ident = fbGetLegendIdent(tilesXCount, xi, yi);
       legends.push([ident, tileSprite]);
     }
-    map += "\n";
   }
 
-  return {
-    legends,
-    solids,
-    map,
-  };
+  return legends;
 }
 
-function fbNew(width: number, height: number): Framebuffer {
+function fbNew(tilesXCount: number, tilesYCount: number): Framebuffer {
+  let width = tilesXCount * 16;
+  let height = tilesYCount * 16;
+
   let fb: Array<Color> = [];
   for (let i = 0; i < width * height; i++) {
     fb.push(0);
   }
 
+  let map = "\n";
+
+  for (let yi = 0; yi < tilesYCount; yi++) {
+    for (let xi = 0; xi < tilesXCount; xi++) {
+      let ident = fbGetLegendIdent(tilesXCount, xi, yi);
+      map += ident;
+    }
+    map += "\n";
+  }
+
   return {
     width,
     height,
+    map,
     fb,
   };
 }
@@ -589,9 +593,9 @@ function vecIntersectsPlane<V extends Vec3 | Vec4>(
   let d = -vecDot(planeNormal, planePoint);
   let ad = vecDot(lineStart, planeNormal);
   let bd = vecDot(lineEnd, planeNormal);
-  let td = (bd - ad);
+  let td = bd - ad;
   if (td == 0) {
-      td += 0.00001;
+    td += 0.00001;
   }
   let t = (-d - ad) / td;
   let lineStartToEnd = vecSubVec(lineEnd, lineStart);
@@ -656,20 +660,15 @@ function triangleClipPlane(
   }
 
   if (insidePoints.length == 2 && outsidePoints.length == 1) {
-    let ot = 
-        vecIntersectsPlane(
-          planePoint,
-          planeNormal,
-          insidePoints[0],
-          outsidePoints[0]
-        );
+    let ot = vecIntersectsPlane(
+      planePoint,
+      planeNormal,
+      insidePoints[0],
+      outsidePoints[0]
+    );
 
     return [
-      [
-        insidePoints[0],
-        insidePoints[1],
-        ot,
-      ],
+      [insidePoints[0], insidePoints[1], ot],
       [
         insidePoints[1],
         ot,

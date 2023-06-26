@@ -51,7 +51,7 @@ const TILE_Y_COUNT = 8;
 
 const BULLET_DAMAGE = 999;
 
-const fb = fbNew(TILE_X_COUNT * 16, TILE_Y_COUNT * 16);
+const fb = fbNew(TILE_X_COUNT, TILE_Y_COUNT);
 
 interface Player {
   position: Vec3;
@@ -232,8 +232,7 @@ function init(api: WebEngineAPI) {
   api.onInput("j", controlLookLeft);
   api.onInput("l", controlLookRight);
 
-  for (let i = -10; i < 10; i++) 
-    spawnEnemy([-6, 0, i * 5]);
+  for (let i = -10; i < 10; i++) spawnEnemy([-6, 0, i * 5]);
   spawnEnemy([6, 0, 4]);
 }
 
@@ -396,10 +395,10 @@ function initEngine(api: WebEngineAPI) {
     tick();
     render(ticks);
 
-    let renderData = fbGetRender(fb, TILE_X_COUNT, TILE_Y_COUNT);
-    api.setLegend(...(renderData.legends as [string, string][]));
+    let legends = fbGetRender(fb, TILE_X_COUNT, TILE_Y_COUNT);
+    api.setLegend(...(legends as [string, string][]));
 
-    api.setMap(renderData.map);
+    api.setMap(fb.map);
     renderText(api);
   }, 1000 / FPS);
 }
