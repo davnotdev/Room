@@ -374,7 +374,7 @@ function fbDrawLine(
     var xs = interpolate(a[1], a[0], b[1], b[0]);
     for (var y = a[1]; y <= b[1]; y += 1) {
       // Crude estimation of depth.
-      fbPut(fb, xs[Math.floor(y - a[1])], y, enableDepth ? a[2]: null, color);
+      fbPut(fb, xs[Math.floor(y - a[1])], y, enableDepth ? a[2] : null, color);
     }
   }
 }
@@ -460,25 +460,26 @@ function mat4Scale(mat: Mat4, scale: Vec3): Mat4 {
 }
 
 function mat4Rotate(mat: Mat4, angle: number, rot: Vec3): Mat4 {
-  let s = Math.sin(angle);
   let c = Math.cos(angle);
+  let s = Math.sin(angle);
+  let axis = vecNormalize(rot);
   let rot_mat = [
     [
-      c + rot[0] * rot[0] * (1 - c),
-      rot[0] * rot[1] * (1 - c),
-      rot[0] * rot[2] * (1 - c) + rot[1] * s,
+      c + axis[0] * axis[0] * (1 - c),
+      axis[0] * axis[1] * (1 - c) - axis[2] * s,
+      axis[0] * axis[2] * (1 - c) + axis[1] * s,
       0.0,
     ],
     [
-      rot[1] * rot[0] * (1 - c) + rot[2] * s,
-      c + rot[0] * rot[0] * (1 - c),
-      rot[1] * rot[2] * (1 - c) - rot[0] * s,
+      axis[1] * axis[0] * (1 - c) + axis[2] * s,
+      c + axis[1] * axis[1] * (1 - c),
+      axis[1] * axis[2] * (1 - c) - axis[0] * s,
       0.0,
     ],
     [
-      rot[2] * rot[0] * (1 - c) - rot[1] * s,
-      rot[2] * rot[1] * (1 - c) + rot[0] * s,
-      c + rot[2] * rot[2] * (1 - c),
+      axis[2] * axis[0] * (1 - c) - axis[1] * s,
+      axis[2] * axis[1] * (1 - c) + axis[0] * s,
+      c + axis[2] * axis[2] * (1 - c),
       0.0,
     ],
     [0.0, 0.0, 0.0, 1.0],

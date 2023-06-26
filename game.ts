@@ -16,7 +16,9 @@ import {
   vecNormalize,
   vec3CrossProduct,
   fbClearDepth,
+  vecLength,
 } from "./graphics";
+import { verticesPerson, verticesCube } from "./models";
 
 //
 //   ____    _____   _____
@@ -132,17 +134,16 @@ function clamp(n: number, low: number, high: number): number {
 }
 
 function tickPlayer() {
-  const PLAYER_MAX_VELOCITY = 0.5;
+  const PLAYER_MAX_VELOCITY = 0.4;
   const PLAYER_FRICTION_SCALAR = 0.01;
 
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
   player.direction = vecNormalize(player.direction);
 
-  for (let i = 0; i < player.velocity.length; i++) {
-    player.velocity[i] = clamp(
-      player.velocity[i],
-      -PLAYER_MAX_VELOCITY,
+  if (vecLength(player.velocity) > PLAYER_MAX_VELOCITY) {
+    player.velocity = vecMulScalar(
+      vecNormalize(player.velocity),
       PLAYER_MAX_VELOCITY
     );
   }
@@ -172,7 +173,7 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  const ENEMY_SPEED = 0.02;
+  const ENEMY_SPEED = 0.1;
   const ENEMY_MAX_CLOSE_UP = 6;
   for (let i in enemies) {
     let enemy = enemies[i];
@@ -233,13 +234,13 @@ function init(api: WebEngineAPI) {
   api.onInput("j", controlLookLeft);
   api.onInput("l", controlLookRight);
 
-  for (let i = -10; i < 10; i++) spawnEnemy([-6, 0, i * 5]);
+  // for (let i = -10; i < 10; i++) spawnEnemy([-6, 0, i * 5]);
   spawnEnemy([6, 0, 4]);
 }
 
 // -- Controls --
 
-const PLAYER_ACCELERATION = 0.2;
+const PLAYER_ACCELERATION = 0.1;
 
 function playerBob() {
   player.bobTick += 1;
@@ -264,20 +265,23 @@ function controlBackward() {
 
 function controlLeft() {
   playerBob();
-  player.velocity = vecMulScalar(
-    vecAddVec(
-      player.velocity,
-      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0]))
-    ),
-    PLAYER_ACCELERATION
+  player.velocity = vecAddVec(
+    player.velocity,
+    vecMulScalar(
+      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
+      PLAYER_ACCELERATION
+    )
   );
 }
 
 function controlRight() {
   playerBob();
-  player.velocity = vecMulScalar(
-    vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
-    -PLAYER_ACCELERATION
+  player.velocity = vecAddVec(
+    player.velocity,
+    vecMulScalar(
+      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
+      -PLAYER_ACCELERATION
+    )
   );
 }
 
@@ -296,7 +300,7 @@ function controlLookRight() {
 // -- Renderer --
 
 function render(ticks: number) {
-  fbClearColor(fb, 0);
+  fbClearColor(fb, 2);
   fbClearDepth(fb, 1000);
 
   let cameraPosition = player.position;
@@ -306,15 +310,16 @@ function render(ticks: number) {
     let enemy = enemies[i];
 
     let mv = mat4Identity();
-    mv = mat4Translate(mv, enemy.position);
-    mv = mat4Scale(mv, [1, 2, 1]);
+    mv = mat4Scale(mv, [0.015, -0.015, 0.01]);
+    mv = mat4Rotate(mv, ticks, [0, 1, 0]);
+    mv = mat4Translate(mv, vecSubVec(enemy.position, [0, -2, 0]));
 
     let render_pass = {
       cameraPosition,
       cameraFront,
       borderColor: 0,
-      colors: 3,
-      triangles: verticesCube(),
+      colors: 5,
+      triangles: verticesPerson(),
       projection: {
         fov_rad: Math.PI / 2.0,
         near: 0.1,
@@ -325,8 +330,8 @@ function render(ticks: number) {
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
-    (render_pass.colors as any) = null;
-    fbRender(fb, render_pass as any);
+    // (render_pass.colors as any) = null;
+    // fbRender(fb, render_pass as any);
   }
 
   for (let i in bullets) {
@@ -406,21 +411,6 @@ function initEngine(api: WebEngineAPI) {
     api.setMap(fb.map);
     renderText(api);
   }, 1000 / FPS);
-}
-
-// -- 3D Models --
-
-function verticesCube() {
-  return [
-    -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0,
-    -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, -1.0, 1.0, -1.0,
-    -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
-    -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0,
-    -1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0,
-    1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
-    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, 1.0, -1.0,
-    1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
-  ];
 }
 
 // -- Sprig Web --
