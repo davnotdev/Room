@@ -103,88 +103,32 @@ function fbClearColor(fb: Framebuffer, color: Color) {
 }
 
 function fbRender(fb: Framebuffer, pass: RenderPass) {
-  let triangles: number[] = [];
-  let worldTriangles: number[] = [];
-
-  if (pass.projection) {
-    let projectionData = pass.projection!;
-
-    let projection = mat4GetProjection(
-      1.0,
-      projectionData.fov_rad,
-      projectionData.near,
-      projectionData.far
-    );
-
-    let mvpMatrix = pass.modelMatrix;
-    let view = mat4GetLookAt(
-      pass.cameraPosition,
-      vecAddVec(pass.cameraPosition, pass.cameraFront),
-      [0, 1, 0]
-    );
-    mvpMatrix = mat4MulMat4(mvpMatrix, view);
-    mvpMatrix = mat4MulMat4(mvpMatrix, projection);
-
-    for (let i = 0; i < pass.triangles.length; i += 3) {
-      let vec4 = [
-        pass.triangles[i + 0],
-        pass.triangles[i + 1],
-        pass.triangles[i + 2],
-        1.0,
-      ] as Vec4;
-
-      let projected = vec4;
-      projected = mat4MulVec4(mvpMatrix, projected);
-      projected = vec4ScaleWithW(projected);
-
-      triangles.push(projected[0]);
-      triangles.push(projected[1]);
-      triangles.push(projected[2]);
-
-      let world = vec4;
-      world = mat4MulVec4(pass.modelMatrix, world);
-
-      worldTriangles.push(world[0]);
-      worldTriangles.push(world[1]);
-      worldTriangles.push(world[2]);
-    }
-  } else {
-    worldTriangles = triangles;
-    triangles = Array.from(pass.triangles);
-  }
-
-  for (let i = 0; i < triangles.length; i += 9) {
+  for (let i = 0; i < pass.triangles.length; i += 9) {
     let vertexA = [
-      triangles[i + 0 + 0],
-      triangles[i + 1 + 0],
-      triangles[i + 2 + 0],
+      pass.triangles[i + 0 + 0],
+      pass.triangles[i + 1 + 0],
+      pass.triangles[i + 2 + 0],
     ] as Vec3;
     let vertexB = [
-      triangles[i + 0 + 3],
-      triangles[i + 1 + 3],
-      triangles[i + 2 + 3],
+      pass.triangles[i + 0 + 3],
+      pass.triangles[i + 1 + 3],
+      pass.triangles[i + 2 + 3],
     ] as Vec3;
     let vertexC = [
-      triangles[i + 0 + 6],
-      triangles[i + 1 + 6],
-      triangles[i + 2 + 6],
+      pass.triangles[i + 0 + 6],
+      pass.triangles[i + 1 + 6],
+      pass.triangles[i + 2 + 6],
     ] as Vec3;
 
-    let worldVertexA = [
-      worldTriangles[i + 0 + 0],
-      worldTriangles[i + 1 + 0],
-      worldTriangles[i + 2 + 0],
-    ] as Vec3;
-    let worldVertexB = [
-      worldTriangles[i + 0 + 3],
-      worldTriangles[i + 1 + 3],
-      worldTriangles[i + 2 + 3],
-    ] as Vec3;
-    let worldVertexC = [
-      worldTriangles[i + 0 + 6],
-      worldTriangles[i + 1 + 6],
-      worldTriangles[i + 2 + 6],
-    ] as Vec3;
+    let worldVertexA = vec4IntoVec3(
+      mat4MulVec4(pass.modelMatrix, [...vertexA, 1])
+    );
+    let worldVertexB = vec4IntoVec3(
+      mat4MulVec4(pass.modelMatrix, [...vertexB, 1])
+    );
+    let worldVertexC = vec4IntoVec3(
+      mat4MulVec4(pass.modelMatrix, [...vertexC, 1])
+    );
 
     let normal = vecNormalize(
       vec3CrossProduct(
@@ -193,36 +137,85 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
       )
     );
 
+    let cullScalar = pass.cullScalar != null ? pass.cullScalar : 1;
     if (
-      vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) < 0 &&
+      vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) *
+        cullScalar <
+        0 &&
       vecDot(
         pass.cameraFront,
         vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
       ) > 0
     ) {
-      vertexA = vecAddScalar(vertexA, 1.0);
-      vertexB = vecAddScalar(vertexB, 1.0);
-      vertexC = vecAddScalar(vertexC, 1.0);
+      let view = mat4GetLookAt(
+        pass.cameraPosition,
+        vecAddVec(pass.cameraPosition, pass.cameraFront),
+        [0, 1, 0]
+      );
 
-      vertexA[0] *= fb.width * 0.5;
-      vertexB[0] *= fb.width * 0.5;
-      vertexC[0] *= fb.width * 0.5;
+      let viewVertexA = vec4IntoVec3(mat4MulVec4(view, [...worldVertexA, 1]));
+      let viewVertexB = vec4IntoVec3(mat4MulVec4(view, [...worldVertexB, 1]));
+      let viewVertexC = vec4IntoVec3(mat4MulVec4(view, [...worldVertexC, 1]));
 
-      vertexA[1] *= fb.height * 0.5;
-      vertexB[1] *= fb.height * 0.5;
-      vertexC[1] *= fb.height * 0.5;
-
-      if (pass.borderColor != null) {
-        fbDrawTriangle(fb, vertexA, vertexB, vertexC, pass.borderColor);
+      let clippedTriangles;
+      if (pass.projection != null) {
+        clippedTriangles = triangleClipPlane(
+          [0, 0, pass.projection.near],
+          [0, 0, 1],
+          [viewVertexA, viewVertexB, viewVertexC]
+        );
+      } else {
+        clippedTriangles = [[viewVertexA, viewVertexB, viewVertexC]];
       }
-      if (pass.colors != null) {
-        let color: Color;
-        if (typeof pass.colors != "string" && typeof pass.colors != "number") {
-          color = (pass.colors as Color[])[Math.floor(i / 9)];
-        } else {
-          color = pass.colors as Color;
+      for (let cti in clippedTriangles) {
+        let triangle = clippedTriangles[cti];
+
+        if (pass.projection != null) {
+          let projectionData = pass.projection!;
+
+          let projection = mat4GetProjection(
+            1.0,
+            projectionData.fov_rad,
+            projectionData.near,
+            projectionData.far
+          );
+
+          let projectedVertexA = mat4MulVec4(projection, [...triangle[0], 1]);
+          let projectedVertexB = mat4MulVec4(projection, [...triangle[1], 1]);
+          let projectedVertexC = mat4MulVec4(projection, [...triangle[2], 1]);
+
+          vertexA = vec4IntoVec3(vec4ScaleWithW(projectedVertexA));
+          vertexB = vec4IntoVec3(vec4ScaleWithW(projectedVertexB));
+          vertexC = vec4IntoVec3(vec4ScaleWithW(projectedVertexC));
         }
-        color != null && fbFillTriangle(fb, vertexA, vertexB, vertexC, color);
+
+        vertexA = vecAddScalar(vertexA, 1.0);
+        vertexB = vecAddScalar(vertexB, 1.0);
+        vertexC = vecAddScalar(vertexC, 1.0);
+
+        vertexA[0] *= fb.width * 0.5;
+        vertexB[0] *= fb.width * 0.5;
+        vertexC[0] *= fb.width * 0.5;
+
+        vertexA[1] *= fb.height * 0.5;
+        vertexB[1] *= fb.height * 0.5;
+        vertexC[1] *= fb.height * 0.5;
+
+        if (pass.borderColor != null) {
+          fbDrawTriangle(fb, vertexA, vertexB, vertexC, pass.borderColor);
+        }
+        if (pass.colors != null) {
+          let color: Color;
+          if (
+            typeof pass.colors != "string" &&
+            typeof pass.colors != "number"
+          ) {
+            color = (pass.colors as Color[])[Math.floor(i / 9)];
+          } else {
+            color = pass.colors as Color;
+          }
+          color != null && fbFillTriangle(fb, vertexA, vertexB, vertexC, color);
+        }
       }
     }
   }
@@ -474,6 +467,10 @@ function vec4ScaleWithW(vec: Vec4): Vec4 {
   return result;
 }
 
+function vec4IntoVec3(vec: Vec4): Vec3 {
+  return [vec[0], vec[1], vec[2]];
+}
+
 function vec3CrossProduct(a: Vec3, b: Vec3): Vec3 {
   let result = [0.0, 0.0, 0.0] as Vec3;
   result[0] = a[1] * b[2] - a[2] * b[1];
@@ -540,6 +537,108 @@ function vecLength<V extends Vec3 | Vec4>(v: V): number {
     sqsum += v[i] * v[i];
   }
   return Math.sqrt(sqsum);
+}
+
+function vecIntersectsPlane<V extends Vec3 | Vec4>(
+  planePoint: V,
+  planeNormal: V,
+  lineStart: V,
+  lineEnd: V
+): V {
+  let d = -vecDot(planeNormal, planePoint);
+  let ad = vecDot(lineStart, planeNormal);
+  let bd = vecDot(lineEnd, planeNormal);
+  let t = (-d - ad) / (bd - ad);
+  let lineStartToEnd = vecSubVec(lineEnd, lineStart);
+  let lineToIntersect = vecMulScalar(lineStartToEnd, t);
+  return vecAddVec(lineStart, lineToIntersect);
+}
+
+function triangleClipPlane(
+  planePoint: Vec3,
+  planeNormal: Vec3,
+  triangle: [Vec3, Vec3, Vec3]
+): [Vec3, Vec3, Vec3][] {
+  let dist = (point: Vec3): number => {
+    let p = vecNormalize(point);
+    return vecDot(planeNormal, p) - vecDot(planeNormal, planePoint);
+  };
+
+  let insidePoints = [];
+  let outsidePoints = [];
+
+  let d0 = dist(triangle[0]);
+  let d1 = dist(triangle[1]);
+  let d2 = dist(triangle[2]);
+
+  if (d0 >= 0) {
+    insidePoints.push(triangle[0]);
+  } else {
+    outsidePoints.push(triangle[0]);
+  }
+  if (d1 >= 0) {
+    insidePoints.push(triangle[1]);
+  } else {
+    outsidePoints.push(triangle[1]);
+  }
+  if (d2 >= 0) {
+    insidePoints.push(triangle[2]);
+  } else {
+    outsidePoints.push(triangle[2]);
+  }
+
+  console.log(insidePoints, outsidePoints);
+
+  if (insidePoints.length == 3) {
+    return [triangle];
+  }
+
+  if (insidePoints.length == 1 && outsidePoints.length == 2) {
+    return [
+      [
+        insidePoints[0],
+        vecIntersectsPlane(
+          planePoint,
+          planeNormal,
+          insidePoints[0],
+          outsidePoints[0]
+        ),
+        vecIntersectsPlane(
+          planePoint,
+          planeNormal,
+          insidePoints[0],
+          outsidePoints[1]
+        ),
+      ],
+    ];
+  }
+
+  if (insidePoints.length == 2 && outsidePoints.length == 1) {
+    return [
+      [
+        insidePoints[0],
+        insidePoints[1],
+        vecIntersectsPlane(
+          planePoint,
+          planeNormal,
+          insidePoints[0],
+          outsidePoints[0]
+        ),
+      ],
+      [
+        insidePoints[1],
+        triangle[2],
+        vecIntersectsPlane(
+          planePoint,
+          planeNormal,
+          insidePoints[1],
+          outsidePoints[0]
+        ),
+      ],
+    ];
+  }
+
+  return [];
 }
 
 export {
