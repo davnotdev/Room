@@ -22,7 +22,7 @@ interface RenderPass {
   cameraFront: Vec3;
   cameraPosition: Vec3;
   triangles: number[];
-  modelMatrix: Mat4 | null | undefined;
+  modelMatrix: Mat4;
   projection: ProjectionData | null | undefined;
   colors: Color | Color[] | null | undefined;
   borderColor: Color | null | undefined;
@@ -104,9 +104,27 @@ function fbClearColor(fb: Framebuffer, color: Color) {
 
 function fbRender(fb: Framebuffer, pass: RenderPass) {
   let triangles: number[] = [];
+  let worldTriangles: number[] = [];
 
   if (pass.projection) {
     let projectionData = pass.projection!;
+
+    let projection = mat4GetProjection(
+      1.0,
+      projectionData.fov_rad,
+      projectionData.near,
+      projectionData.far
+    );
+
+    let mvpMatrix = pass.modelMatrix;
+    let view = mat4GetLookAt(
+      pass.cameraPosition,
+      vecAddVec(pass.cameraPosition, pass.cameraFront),
+      [0, 1, 0]
+    );
+    mvpMatrix = mat4MulMat4(mvpMatrix, view);
+    mvpMatrix = mat4MulMat4(mvpMatrix, projection);
+
     for (let i = 0; i < pass.triangles.length; i += 3) {
       let vec4 = [
         pass.triangles[i + 0],
@@ -115,38 +133,23 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
         1.0,
       ] as Vec4;
 
-      let projection = mat4GetProjection(
-        1.0,
-        projectionData.fov_rad,
-        projectionData.near,
-        projectionData.far
-      );
-
       let projected = vec4;
-
-      let modelView = null;
-      modelView = pass.modelMatrix;
-      let view = mat4GetLookAt(
-        pass.cameraPosition,
-        vecAddVec(pass.cameraPosition, pass.cameraFront),
-        [0, 1, 0]
-      );
-      if (modelView != null) {
-        modelView = mat4MulMat4(modelView, view);
-      } else {
-        modelView = view;
-      }
-      modelView = mat4MulMat4(modelView, projection);
-      projected = mat4MulVec4(modelView, projected);
-      // projected = mat4MulVec4(projection, projected);
-
+      projected = mat4MulVec4(mvpMatrix, projected);
       projected = vec4ScaleWithW(projected);
 
       triangles.push(projected[0]);
       triangles.push(projected[1]);
       triangles.push(projected[2]);
+
+      let world = vec4;
+      world = mat4MulVec4(pass.modelMatrix, world);
+
+      worldTriangles.push(world[0]);
+      worldTriangles.push(world[1]);
+      worldTriangles.push(world[2]);
     }
   } else {
+    worldTriangles = triangles;
     triangles = Array.from(pass.triangles);
   }
 
@@ -167,21 +170,36 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
       triangles[i + 2 + 6],
     ] as Vec3;
 
+    let worldVertexA = [
+      worldTriangles[i + 0 + 0],
+      worldTriangles[i + 1 + 0],
+      worldTriangles[i + 2 + 0],
+    ] as Vec3;
+    let worldVertexB = [
+      worldTriangles[i + 0 + 3],
+      worldTriangles[i + 1 + 3],
+      worldTriangles[i + 2 + 3],
+    ] as Vec3;
+    let worldVertexC = [
+      worldTriangles[i + 0 + 6],
+      worldTriangles[i + 1 + 6],
+      worldTriangles[i + 2 + 6],
+    ] as Vec3;
+
     let normal = vecNormalize(
       vec3CrossProduct(
-        vecAddVec(vertexA, vecMulScalar(vertexB, -1)),
-        vecAddVec(vertexA, vecMulScalar(vertexC, -1))
+        vecSubVec(worldVertexB, worldVertexA),
+        vecSubVec(worldVertexC, worldVertexA)
       )
     );
 
-    let viewToVertex = vecNormalize(
-      vecAddVec(vertexA, vecMulScalar(pass.cameraPosition, -1))
-    );
-
-    let dot = vecDot(normal, viewToVertex);
-    pass.cullScalar != null && (dot *= pass.cullScalar);
-
-    if (dot < 0.0) {
+    if (
+      vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) < 0 &&
+      vecDot(
+        pass.cameraFront,
+        vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
+      ) > 0
+    ) {
       vertexA = vecAddScalar(vertexA, 1.0);
       vertexB = vecAddScalar(vertexB, 1.0);
       vertexC = vecAddScalar(vertexC, 1.0);

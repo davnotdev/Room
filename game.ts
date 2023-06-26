@@ -63,7 +63,7 @@ interface Player {
 const player: Player = {
   position: [0, 0, 0],
   velocity: [0, 0, 0],
-  direction: [0, 0, 0],
+  direction: [1, 0, 0],
   bobTick: 0,
   yaw: 0,
 };
@@ -137,8 +137,6 @@ function tickPlayer() {
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
   player.direction = vecNormalize(player.direction);
-
-  console.log(player.direction);
 
   for (let i = 0; i < player.velocity.length; i++) {
     player.velocity[i] = clamp(
@@ -234,7 +232,8 @@ function init(api: WebEngineAPI) {
   api.onInput("j", controlLookLeft);
   api.onInput("l", controlLookRight);
 
-  spawnEnemy([6, 0, 0]);
+  spawnEnemy([-6, 0, 4]);
+  spawnEnemy([6, 0, 4]);
 }
 
 // -- Controls --
