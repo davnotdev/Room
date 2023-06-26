@@ -15,6 +15,7 @@ import {
   vecAddVec,
   vecNormalize,
   vec3CrossProduct,
+  fbClearDepth,
 } from "./graphics";
 
 //
@@ -296,6 +297,7 @@ function controlLookRight() {
 
 function render(ticks: number) {
   fbClearColor(fb, 0);
+  fbClearDepth(fb, 1000);
 
   let cameraPosition = player.position;
   let cameraFront = vecNormalize(player.direction);
@@ -319,6 +321,7 @@ function render(ticks: number) {
         far: 100.0,
       },
       modelMatrix: mv,
+      enableDepth: true,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
@@ -345,6 +348,7 @@ function render(ticks: number) {
         far: 100.0,
       },
       modelMatrix: mv,
+      enableDepth: true,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);
@@ -369,6 +373,7 @@ function render(ticks: number) {
         far: 100.0,
       },
       modelMatrix: mv,
+      enableDepth: true,
       cullScalar: 1,
     };
     fbRender(fb, render_pass as any);

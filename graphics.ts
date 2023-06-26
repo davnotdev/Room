@@ -1,9 +1,11 @@
 type Color = number | string;
+type Depth = number;
 
 interface Framebuffer {
   width: number;
   height: number;
-  fb: Color[];
+  fbColor: Color[];
+  fbDepth: Depth[];
   map: string;
 }
 
@@ -28,6 +30,7 @@ interface RenderPass {
   colors: Color | Color[] | null | undefined;
   borderColor: Color | null | undefined;
   cullScalar: number | null;
+  enableDepth: boolean | null | undefined;
 }
 
 function fbGetLegendIdent(tilesXCount: number, tileX: number, tileY: number) {
@@ -65,9 +68,14 @@ function fbNew(tilesXCount: number, tilesYCount: number): Framebuffer {
   let width = tilesXCount * 16;
   let height = tilesYCount * 16;
 
-  let fb: Array<Color> = [];
+  let fbColor: Array<Color> = [];
   for (let i = 0; i < width * height; i++) {
-    fb.push(0);
+    fbColor.push(0);
+  }
+
+  let fbDepth: Array<Depth> = [];
+  for (let i = 0; i < width * height; i++) {
+    fbColor.push(0);
   }
 
   let map = "\n";
@@ -84,24 +92,45 @@ function fbNew(tilesXCount: number, tilesYCount: number): Framebuffer {
     width,
     height,
     map,
-    fb,
+    fbColor,
+    fbDepth,
   };
 }
 
-function fbPut(fb: Framebuffer, x: number, y: number, color: Color) {
+function fbPut(
+  fb: Framebuffer,
+  x: number,
+  y: number,
+  z: number | null,
+  color: Color
+) {
   if (x < fb.width && x >= 0 && y < fb.height && y >= 0) {
-    fb.fb[fb.width * Math.floor(y) + Math.floor(x)] = color;
+    let idx = fb.width * Math.floor(y) + Math.floor(x);
+    if (z != null && z < fb.fbDepth[idx]) {
+      fb.fbDepth[idx] = z;
+      fb.fbColor[idx] = color;
+    } else if (z == null) {
+      fb.fbColor[idx] = color;
+    }
   }
 }
 
 function fbGetColor(fb: Framebuffer, x: number, y: number): Color {
-  return fb.fb[y * fb.width + x];
+  return fb.fbColor[y * fb.width + x];
 }
 
 function fbClearColor(fb: Framebuffer, color: Color) {
   for (let y = 0; y < fb.height; y++) {
     for (let x = 0; x < fb.width; x++) {
-      fb.fb[y * fb.width + x] = color;
+      fb.fbColor[y * fb.width + x] = color;
+    }
+  }
+}
+
+function fbClearDepth(fb: Framebuffer, depth: Depth) {
+  for (let y = 0; y < fb.height; y++) {
+    for (let x = 0; x < fb.width; x++) {
+      fb.fbDepth[y * fb.width + x] = depth;
     }
   }
 }
@@ -205,6 +234,10 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
         vertexB[1] *= fb.height * 0.5;
         vertexC[1] *= fb.height * 0.5;
 
+        vertexA[2] *= fb.width * 0.5;
+        vertexB[2] *= fb.width * 0.5;
+        vertexC[2] *= fb.width * 0.5;
+
         let finalTriangles: [Vec3, Vec3, Vec3][] = [];
         finalTriangles.push([vertexA, vertexB, vertexC]);
         let testPlanes: [Vec3, Vec3][] = [
@@ -245,7 +278,14 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
           let vertexB = finalTriangle[1] as Vec3;
           let vertexC = finalTriangle[2] as Vec3;
           if (pass.borderColor != null) {
-            fbDrawTriangle(fb, vertexA, vertexB, vertexC, pass.borderColor);
+            fbDrawTriangle(
+              fb,
+              vertexA,
+              vertexB,
+              vertexC,
+              pass.borderColor,
+              pass.enableDepth!
+            );
           }
           if (pass.colors != null) {
             let color: Color;
@@ -258,7 +298,14 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
               color = pass.colors as Color;
             }
             color != null &&
-              fbFillTriangle(fb, vertexA, vertexB, vertexC, color);
+              fbFillTriangle(
+                fb,
+                vertexA,
+                vertexB,
+                vertexC,
+                color,
+                pass.enableDepth!
+              );
           }
         }
       }
@@ -271,11 +318,12 @@ function fbDrawTriangle(
   a: Vec3,
   b: Vec3,
   c: Vec3,
-  borderColor: Color
+  borderColor: Color,
+  enableDepth: boolean
 ) {
-  fbDrawLine(fb, a, b, borderColor);
-  fbDrawLine(fb, b, c, borderColor);
-  fbDrawLine(fb, a, c, borderColor);
+  fbDrawLine(fb, a, b, borderColor, enableDepth);
+  fbDrawLine(fb, b, c, borderColor, enableDepth);
+  fbDrawLine(fb, a, c, borderColor, enableDepth);
 }
 
 function interpolate(i0: number, d0: number, i1: number, d1: number): number[] {
@@ -294,7 +342,13 @@ function interpolate(i0: number, d0: number, i1: number, d1: number): number[] {
   return values;
 }
 
-function fbDrawLine(fb: Framebuffer, a: Vec3, b: Vec3, color: Color) {
+function fbDrawLine(
+  fb: Framebuffer,
+  a: Vec3,
+  b: Vec3,
+  color: Color,
+  enableDepth: boolean
+) {
   var dx = b[0] - a[0];
   var dy = b[1] - a[1];
 
@@ -306,8 +360,9 @@ function fbDrawLine(fb: Framebuffer, a: Vec3, b: Vec3, color: Color) {
     }
 
     var ys = interpolate(a[0], a[1], b[0], b[1]);
-    for (var x = a[0]; x <= b[0]; x += 0.3) {
-      fbPut(fb, x, ys[Math.floor(x - a[0])], color);
+    for (var x = a[0]; x <= b[0]; x += 1) {
+      // Crude estimation of depth.
+      fbPut(fb, x, ys[Math.floor(x - a[0])], enableDepth ? a[2] : null, color);
     }
   } else {
     if (dy < 0) {
@@ -317,8 +372,9 @@ function fbDrawLine(fb: Framebuffer, a: Vec3, b: Vec3, color: Color) {
     }
 
     var xs = interpolate(a[1], a[0], b[1], b[0]);
-    for (var y = a[1]; y <= b[1]; y += 0.3) {
-      fbPut(fb, xs[Math.floor(y - a[1])], y, color);
+    for (var y = a[1]; y <= b[1]; y += 1) {
+      // Crude estimation of depth.
+      fbPut(fb, xs[Math.floor(y - a[1])], y, enableDepth ? a[2]: null, color);
     }
   }
 }
@@ -328,7 +384,8 @@ function fbFillTriangle(
   a: Vec3,
   b: Vec3,
   c: Vec3,
-  color: Color
+  color: Color,
+  enableDepth: boolean
 ) {
   if (b[1] < a[1]) {
     var swap = a;
@@ -365,13 +422,14 @@ function fbFillTriangle(
     x_right = x02;
   }
 
-  for (var y = a[1]; y <= c[1]; y += 0.3) {
+  for (var y = a[1]; y <= c[1]; y += 1) {
     for (
       var x = x_left[Math.floor(y - a[1])];
       x <= x_right[Math.floor(y - a[1])];
       x += 0.3
     ) {
-      fbPut(fb, x, y, color);
+      // Crude estimation of depth.
+      fbPut(fb, x, y, enableDepth ? a[2] : null, color);
     }
   }
 }
@@ -690,6 +748,7 @@ export {
   fbGetRender,
   fbDrawLine,
   fbClearColor,
+  fbClearDepth,
   fbRender,
   mat4MulMat4,
   mat4MulVec4,
@@ -704,7 +763,6 @@ export {
   vecMulScalar,
   vecNormalize,
   vec3CrossProduct,
-  type Render,
   type RenderPass,
   type ProjectionData,
   type Color,
