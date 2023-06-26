@@ -201,20 +201,61 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
         vertexB[1] *= fb.height * 0.5;
         vertexC[1] *= fb.height * 0.5;
 
-        if (pass.borderColor != null) {
-          fbDrawTriangle(fb, vertexA, vertexB, vertexC, pass.borderColor);
-        }
-        if (pass.colors != null) {
-          let color: Color;
-          if (
-            typeof pass.colors != "string" &&
-            typeof pass.colors != "number"
-          ) {
-            color = (pass.colors as Color[])[Math.floor(i / 9)];
-          } else {
-            color = pass.colors as Color;
+        let finalTriangles: [Vec3, Vec3, Vec3][] = [];
+        finalTriangles.push([vertexA, vertexB, vertexC]);
+        let testPlanes: [Vec3, Vec3][] = [
+          [
+            [0, 0, 0],
+            [0, 1, 0],
+          ],
+          [
+            [0, fb.height - 1, 0],
+            [0, -1, 0],
+          ],
+          [
+            [0, 0, 0],
+            [1, 0, 0],
+          ],
+          [
+            [fb.width - 1, 0, 0],
+            [-1, 0, 0],
+          ],
+        ];
+        for (let p in testPlanes) {
+          let nextTests: [Vec3, Vec3, Vec3][] = [];
+          for (let t in finalTriangles) {
+            nextTests.push(
+              ...triangleClipPlane(
+                testPlanes[p][0],
+                testPlanes[p][1],
+                finalTriangles[t]
+              )
+            );
           }
-          color != null && fbFillTriangle(fb, vertexA, vertexB, vertexC, color);
+          finalTriangles = nextTests;
+        }
+
+        for (let t in finalTriangles) {
+          let finalTriangle = finalTriangles[t];
+          let vertexA = finalTriangle[0] as Vec3;
+          let vertexB = finalTriangle[1] as Vec3;
+          let vertexC = finalTriangle[2] as Vec3;
+          if (pass.borderColor != null) {
+            fbDrawTriangle(fb, vertexA, vertexB, vertexC, pass.borderColor);
+          }
+          if (pass.colors != null) {
+            let color: Color;
+            if (
+              typeof pass.colors != "string" &&
+              typeof pass.colors != "number"
+            ) {
+              color = (pass.colors as Color[])[Math.floor(i / 9)];
+            } else {
+              color = pass.colors as Color;
+            }
+            color != null &&
+              fbFillTriangle(fb, vertexA, vertexB, vertexC, color);
+          }
         }
       }
     }
@@ -548,7 +589,11 @@ function vecIntersectsPlane<V extends Vec3 | Vec4>(
   let d = -vecDot(planeNormal, planePoint);
   let ad = vecDot(lineStart, planeNormal);
   let bd = vecDot(lineEnd, planeNormal);
-  let t = (-d - ad) / (bd - ad);
+  let td = (bd - ad);
+  if (td == 0) {
+      td += 0.00001;
+  }
+  let t = (-d - ad) / td;
   let lineStartToEnd = vecSubVec(lineEnd, lineStart);
   let lineToIntersect = vecMulScalar(lineStartToEnd, t);
   return vecAddVec(lineStart, lineToIntersect);
@@ -560,8 +605,7 @@ function triangleClipPlane(
   triangle: [Vec3, Vec3, Vec3]
 ): [Vec3, Vec3, Vec3][] {
   let dist = (point: Vec3): number => {
-    let p = vecNormalize(point);
-    return vecDot(planeNormal, p) - vecDot(planeNormal, planePoint);
+    return vecDot(planeNormal, point) - vecDot(planeNormal, planePoint);
   };
 
   let insidePoints = [];
@@ -586,8 +630,6 @@ function triangleClipPlane(
   } else {
     outsidePoints.push(triangle[2]);
   }
-
-  console.log(insidePoints, outsidePoints);
 
   if (insidePoints.length == 3) {
     return [triangle];
@@ -614,20 +656,23 @@ function triangleClipPlane(
   }
 
   if (insidePoints.length == 2 && outsidePoints.length == 1) {
-    return [
-      [
-        insidePoints[0],
-        insidePoints[1],
+    let ot = 
         vecIntersectsPlane(
           planePoint,
           planeNormal,
           insidePoints[0],
           outsidePoints[0]
-        ),
+        );
+
+    return [
+      [
+        insidePoints[0],
+        insidePoints[1],
+        ot,
       ],
       [
         insidePoints[1],
-        triangle[2],
+        ot,
         vecIntersectsPlane(
           planePoint,
           planeNormal,

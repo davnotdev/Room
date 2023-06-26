@@ -232,7 +232,8 @@ function init(api: WebEngineAPI) {
   api.onInput("j", controlLookLeft);
   api.onInput("l", controlLookRight);
 
-  spawnEnemy([-6, 0, 4]);
+  for (let i = -10; i < 10; i++) 
+    spawnEnemy([-6, 0, i * 5]);
   spawnEnemy([6, 0, 4]);
 }
 
