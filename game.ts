@@ -23,6 +23,16 @@ import {
   RenderPass,
 } from "./graphics";
 import { verticesBobPerson, verticesCube } from "./models";
+import {
+  soundPickUp,
+  soundExplosion,
+  soundPew,
+  soundDeath,
+  soundEnemyAttack,
+  soundStageUp,
+  soundResolutionChange,
+  soundMenuMusic,
+} from "./sounds";
 
 //
 //   ____    _____   _____
@@ -54,6 +64,8 @@ import { verticesBobPerson, verticesCube } from "./models";
 //
 
 // -- Framebuffer Globals --
+
+var api: WebEngineAPI;
 
 const FPS = 24;
 var tileXCount = 0;
@@ -129,10 +141,10 @@ var medkitHealPopups: MedkitHealPopup[] = [];
 
 // -- Enemy Globals --
 
-const ENEMY_DAMAGE = 0.15;
+const ENEMY_DAMAGE = 0.2;
 const ENEMY_MAX_DODGE = 0.3;
 const ENEMY_REACH = 1.8;
-const ENEMY_SPEED_INCREMENT_SCALAR = 0.0004;
+const ENEMY_SPEED_INCREMENT_SCALAR = 0.0006;
 
 interface Enemy {
   speed: number;
@@ -145,9 +157,28 @@ var enemies: Enemy[] = [];
 
 // -- Stage Globals --
 
-const ENEMY_CAP_STAGES = [3, 5, 20, 30, 999];
-const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 10];
-const KILL_SCREEN_STAGE = 4;
+const ENEMY_CAP_STAGES = [3, 5, 8, 20, 30, 40, 9999];
+const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 0.4, 0.5, 10];
+const KILL_SCREEN_STAGE = 6;
+
+function getStageNumber() {
+  if (startTime <= 20) {
+    return 0;
+  } else if (startTime <= 100) {
+    return 1;
+  } else if (startTime <= 200) {
+    return 2;
+  } else if (startTime <= 300) {
+    return 3;
+  } else if (startTime <= 400) {
+    return 4;
+  } else if (startTime <= 999) {
+    return 5;
+  } else {
+    return KILL_SCREEN_STAGE;
+  }
+}
+
 
 // -- Explosion Globals --
 
@@ -176,20 +207,6 @@ interface Wall {
 var walls: Wall[] = [];
 
 let startTime = 0;
-
-function getStageNumber() {
-  if (startTime <= 20) {
-    return 0;
-  } else if (startTime <= 100) {
-    return 1;
-  } else if (startTime <= 230) {
-    return 2;
-  } else if (startTime <= 999) {
-    return 3;
-  } else {
-    return KILL_SCREEN_STAGE;
-  }
-}
 
 // -- Game State --
 
@@ -310,7 +327,7 @@ function spawnMedkitHealPopup() {
 
 function spawnEnemy(position: Vec3) {
   let stage = getStageNumber();
-  if (enemies.length >= ENEMY_CAP_STAGES[stage] && stage != KILL_SCREEN_STAGE)
+  if (enemies.length >= ENEMY_CAP_STAGES[stage])
     return;
 
   let randomSpeed = Math.random() * 0.4 + 0.1;
@@ -334,6 +351,7 @@ function spawnEnemy(position: Vec3) {
 }
 
 function spawnBullet(origin: Vec3, direction: Vec3) {
+  api.playTune(soundPew());
   let bullet = {
     origin,
     direction,
@@ -343,6 +361,7 @@ function spawnBullet(origin: Vec3, direction: Vec3) {
 }
 
 function spawnExplosion(position: Vec3) {
+  api.playTune(soundExplosion());
   let explosion = {
     position,
     sizeScalar: 0.2,
@@ -352,7 +371,7 @@ function spawnExplosion(position: Vec3) {
 
 // -- Game Start --
 
-function initInput(api: WebEngineAPI) {
+function initInput() {
   api.onInput("w", inputLeftUp);
   api.onInput("s", inputLeftDown);
   api.onInput("a", inputLeftLeft);
@@ -465,7 +484,7 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  let enemySpeedIncrement = ENEMY_SPEED_INCREMENT_SCALAR * getStageNumber();
+  let enemySpeedIncrement = ENEMY_SPEED_INCREMENT_SCALAR;
   for (let i in enemies) {
     let enemy = enemies[i];
 
@@ -500,6 +519,7 @@ function tickEnemies() {
       }
     } else {
       // BAM. Attack the player.
+      api.playTune(soundEnemyAttack());
       player.health -= ENEMY_DAMAGE;
     }
     // BAM. Attacked by player.
@@ -543,6 +563,7 @@ function tickMedkit() {
   if (medkit) {
     // Pick up the medkit if it's close enough.
     if (vecDistance(player.position, medkit.position) <= MEDKIT_PICKUP_RANGE) {
+      api.playTune(soundPickUp());
       medkit = null;
       spawnMedkitHealPopup();
 
@@ -586,9 +607,11 @@ function tickEnemySpawn() {
   }
 }
 
+var lastStageNumber = getStageNumber();
 function tickGame() {
   // Game over.
   if (player.health <= 0) {
+    api.playTune(soundDeath());
     playerDead = true;
     setTimeout(() => {
       gameState = GameState.MENU;
@@ -597,6 +620,11 @@ function tickGame() {
 
   if (!playerDead) {
     startTime += 1 / FPS;
+
+    if (lastStageNumber != getStageNumber()) {
+      api.playTune(soundStageUp());
+    }
+    lastStageNumber = getStageNumber();
 
     tickPlayer();
     tickEnemies();
@@ -770,6 +798,7 @@ function inputRightRight() {
 // -- Renderer --
 
 function incrementRes() {
+  api.playTune(soundResolutionChange());
   selectedResLevel += 1;
   if (selectedResLevel >= RES_LEVELS.length)
     selectedResLevel = RES_LEVELS.length - 1;
@@ -777,6 +806,7 @@ function incrementRes() {
 }
 
 function decrementRes() {
+  api.playTune(soundResolutionChange());
   selectedResLevel -= 1;
   if (selectedResLevel < 0) selectedResLevel = 0;
   recreateFramebuffer();
@@ -917,7 +947,7 @@ function renderMenu() {
   fbRender(fb, renderPass);
 }
 
-function renderGameText(api: WebEngineAPI) {
+function renderGameText() {
   let healthColor;
   if (player.health < PLAYER_MAX_HEALTH / 2) {
     healthColor = "3";
@@ -964,7 +994,7 @@ function renderGameText(api: WebEngineAPI) {
   }
 }
 
-function renderMenuText(api: WebEngineAPI) {
+function renderMenuText() {
   api.clearText();
 
   api.addText("ROOM", {
@@ -1002,10 +1032,15 @@ function renderMenuText(api: WebEngineAPI) {
   });
 }
 
-function initEngine(api: WebEngineAPI) {
+function initEngine() {
   api.setMap(`.`);
 
-  initInput(api);
+  // So that I don't get jumpscared by vite.
+  setTimeout(() => {
+    api.playTune(soundMenuMusic(), Infinity);
+  }, 1000);
+
+  initInput();
 
   setInterval(() => {
     switch (gameState) {
@@ -1026,10 +1061,10 @@ function initEngine(api: WebEngineAPI) {
 
     switch (gameState) {
       case GameState.MENU:
-        renderMenuText(api);
+        renderMenuText();
         break;
       case GameState.PLAY:
-        renderGameText(api);
+        renderGameText();
         break;
     }
   }, 1000 / FPS);
@@ -1041,5 +1076,6 @@ if (document) {
   const game = webEngine(
     document.getElementById("canvas") as HTMLCanvasElement
   );
-  initEngine(game.api);
+  api = game.api;
+  initEngine();
 }
