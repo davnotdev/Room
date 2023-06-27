@@ -63,7 +63,6 @@ const RES_LEVELS = [
   [8, 8],
   [10, 8],
   [20, 16],
-  [40, 32],
 ];
 var selectedResLevel = 3;
 
