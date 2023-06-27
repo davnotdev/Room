@@ -9,6 +9,7 @@ import {
   mat4Scale,
   mat4Rotate,
   Vec3,
+  Framebuffer,
   Color,
   vecMulScalar,
   vecDistance,
@@ -50,8 +51,8 @@ import { verticesBobPerson, verticesCube } from "./models";
 // -- Game Globals --
 
 const FPS = 24;
-const TILE_X_COUNT = 10;
-const TILE_Y_COUNT = 8;
+var tileXCount = 0;
+var tileYCount = 0;
 
 const RES_LEVELS = [
   [1, 1],
@@ -62,13 +63,15 @@ const RES_LEVELS = [
   [8, 8],
   [10, 8],
 ];
+var selectedResLevel = 3;
 
 const ENEMY_CAP = 15;
 
 const BULLET_DAMAGE = 40;
 const BULLET_COOLDOWN_THRESHOLD = 0.14;
 
-const fb = fbNew(TILE_X_COUNT, TILE_Y_COUNT);
+var fb: Framebuffer;
+recreateFramebuffer();
 
 const PLAYER_MAX_HEALTH = 50;
 const PLAYER_POISON_TICK = 0.012;
@@ -78,6 +81,14 @@ const KILL_SCREEN_STAGE = 4;
 
 const ENEMY_DAMAGE = 0.22;
 const MEDKIT_HEAL_AMOUNT = 13;
+
+enum GameState {
+  RES_MENU,
+  MENU,
+  PLAY,
+}
+
+var gameState = GameState.RES_MENU;
 
 interface Player {
   position: Vec3;
@@ -142,7 +153,6 @@ const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
 let startTime = 0;
 
 function getStageNumber() {
-  console.log(startTime);
   if (startTime <= 15) {
     return 0;
   } else if (startTime <= 100) {
@@ -430,7 +440,7 @@ function tickEnemySpawn() {
   }
 }
 
-function tick() {
+function tickGame() {
   startTime += 1 / FPS;
 
   tickPlayer();
@@ -440,6 +450,10 @@ function tick() {
   tickExplosions();
   tickPoison();
   tickEnemySpawn();
+}
+
+function tickResMenu() {
+  startTime += 1 / FPS;
 }
 
 // -- Collision Detection --
@@ -479,21 +493,23 @@ function isNotInsideWalls(d: Vec3): boolean {
 
 // -- Game Start --
 
-function init(api: WebEngineAPI) {
-  api.onInput("w", controlForward);
-  api.onInput("s", controlBackward);
-  api.onInput("a", controlLeft);
-  api.onInput("d", controlRight);
+function initInput(api: WebEngineAPI) {
+  api.onInput("w", inputLeftUp);
+  api.onInput("s", inputLeftDown);
+  api.onInput("a", inputLeftLeft);
+  api.onInput("d", inputLeftRight);
 
-  api.onInput("i", controlPew);
-  api.onInput("j", controlLookLeft);
-  api.onInput("l", controlLookRight);
-  api.onInput("k", controlLookBehind);
+  api.onInput("i", inputRightUp);
+  api.onInput("j", inputRightLeft);
+  api.onInput("l", inputRightRight);
+  api.onInput("k", inputRightDown);
+}
 
+function initGame() {
   spawnWalls();
 }
 
-// -- Controls --
+// -- Input --
 
 const PLAYER_ACCELERATION = 0.1;
 
@@ -502,66 +518,152 @@ function playerBob() {
   player.position[1] = Math.sin(player.bobTick * 0.8) * 0.2 + 0.1;
 }
 
-function controlForward() {
-  playerBob();
-  player.velocity = vecAddVec(
-    player.velocity,
-    vecMulScalar(player.direction, PLAYER_ACCELERATION)
-  );
-}
-
-function controlBackward() {
-  playerBob();
-  player.velocity = vecAddVec(
-    player.velocity,
-    vecMulScalar(player.direction, -PLAYER_ACCELERATION)
-  );
-}
-
-function controlLeft() {
-  playerBob();
-  player.velocity = vecAddVec(
-    player.velocity,
-    vecMulScalar(
-      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
-      PLAYER_ACCELERATION
-    )
-  );
-}
-
-function controlRight() {
-  playerBob();
-  player.velocity = vecAddVec(
-    player.velocity,
-    vecMulScalar(
-      vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
-      -PLAYER_ACCELERATION
-    )
-  );
-}
-
-function controlPew() {
-  if (startTime - player.lastBulletTime >= BULLET_COOLDOWN_THRESHOLD) {
-    spawnBullet(vecAddVec(player.position, [0, 2, 0]), player.direction);
-    player.lastBulletTime = startTime;
+function inputLeftUp() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      playerBob();
+      player.velocity = vecAddVec(
+        player.velocity,
+        vecMulScalar(player.direction, PLAYER_ACCELERATION)
+      );
+      break;
   }
 }
 
-function controlLookLeft() {
-  player.yaw += Math.PI / 30;
+function inputLeftDown() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      playerBob();
+      player.velocity = vecAddVec(
+        player.velocity,
+        vecMulScalar(player.direction, -PLAYER_ACCELERATION)
+      );
+      break;
+  }
 }
 
-function controlLookRight() {
-  player.yaw -= Math.PI / 30;
+function inputLeftLeft() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      playerBob();
+      player.velocity = vecAddVec(
+        player.velocity,
+        vecMulScalar(
+          vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
+          PLAYER_ACCELERATION
+        )
+      );
+      break;
+  }
 }
 
-function controlLookBehind() {
-  player.yaw -= Math.PI;
+function inputLeftRight() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      playerBob();
+      player.velocity = vecAddVec(
+        player.velocity,
+        vecMulScalar(
+          vecNormalize(vec3CrossProduct(player.direction, [0, 1, 0])),
+          -PLAYER_ACCELERATION
+        )
+      );
+      break;
+  }
+}
+
+function inputRightUp() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      incrementRes();
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      if (startTime - player.lastBulletTime >= BULLET_COOLDOWN_THRESHOLD) {
+        spawnBullet(vecAddVec(player.position, [0, 2, 0]), player.direction);
+        player.lastBulletTime = startTime;
+      }
+      break;
+  }
+}
+
+function inputRightDown() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      decrementRes();
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      player.yaw -= Math.PI;
+      break;
+  }
+}
+
+function inputRightLeft() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      player.yaw += Math.PI / 30;
+      break;
+  }
+}
+
+function inputRightRight() {
+  switch (gameState) {
+    case GameState.RES_MENU:
+      break;
+    case GameState.MENU:
+      break;
+    case GameState.PLAY:
+      player.yaw -= Math.PI / 30;
+      break;
+  }
 }
 
 // -- Renderer --
 
-function render(ticks: number) {
+function incrementRes() {
+  selectedResLevel += 1;
+  if (selectedResLevel >= RES_LEVELS.length)
+    selectedResLevel = RES_LEVELS.length - 1;
+  recreateFramebuffer();
+}
+
+function decrementRes() {
+  selectedResLevel -= 1;
+  if (selectedResLevel < 0) selectedResLevel = 0;
+  recreateFramebuffer();
+}
+
+function recreateFramebuffer() {
+  let res = RES_LEVELS[selectedResLevel];
+  tileXCount = res[0];
+  tileYCount = res[1];
+  fb = fbNew(tileXCount, tileYCount);
+}
+
+function renderGame() {
   fbClearColor(fb, 2);
   fbClearDepth(fb, 1000);
 
@@ -601,7 +703,7 @@ function render(ticks: number) {
 
     let mv = mat4Identity();
     mv = mat4Scale(mv, [0.015, -0.015, 0.01]);
-    mv = mat4Rotate(mv, ticks * 2 * enemy.color, [0, 1, 0]);
+    mv = mat4Rotate(mv, startTime * 2 * enemy.color, [0, 1, 0]);
     mv = mat4Translate(mv, vecSubVec(enemy.position, [0, -2, 0]));
 
     baseRenderPass.modelMatrix = mv;
@@ -658,7 +760,34 @@ function render(ticks: number) {
   }
 }
 
-function renderText(api: WebEngineAPI) {
+function renderResMenu() {
+  fbClearColor(fb, 0);
+
+  let mv = mat4Identity();
+  mv = mat4Scale(mv, [0.005, -0.008, 0.005]);
+  mv = mat4Rotate(mv, startTime, [0, 1, 0]);
+  mv = mat4Translate(mv, [1.5, 0.9, 0.8]);
+
+  let renderPass = {
+    cameraPosition: [0, 0, 0] as Vec3,
+    cameraFront: [1, 0, 0] as Vec3,
+    projection: {
+      fov_rad: Math.PI / 2.0,
+      near: 0.1,
+      far: 100.0,
+    },
+    colors: "2",
+    borderColor: "2",
+    triangles: verticesBobPerson(),
+    modelMatrix: mv,
+    enableDepth: false,
+    cullScalar: 1,
+  };
+
+  fbRender(fb, renderPass);
+}
+
+function renderGameText(api: WebEngineAPI) {
   let healthColor;
   if (player.health < PLAYER_MAX_HEALTH / 2) {
     healthColor = "3";
@@ -697,23 +826,78 @@ function renderText(api: WebEngineAPI) {
   });
 }
 
+function renderResMenuText(api: WebEngineAPI) {
+  api.clearText();
+
+  api.addText("ROOM", {
+    x: 3,
+    y: 1,
+    color: "2",
+  });
+
+  api.addText("Use i & k", {
+    x: 8,
+    y: 3,
+    color: "2",
+  });
+  api.addText("to adjust", {
+    x: 8,
+    y: 4,
+    color: "2",
+  });
+  api.addText("resolution", {
+    x: 8,
+    y: 5,
+    color: "2",
+  });
+  api.addText("W to Begin", {
+    x: 8,
+    y: 13,
+    color: "2",
+  });
+
+  let res = RES_LEVELS[selectedResLevel];
+  api.addText(`(${res[0]}:${res[1]})`, {
+    x: 10,
+    y: 8,
+    color: "2",
+  });
+}
+
 function initEngine(api: WebEngineAPI) {
   api.setMap(`.`);
 
-  init(api);
+  initInput(api);
 
-  let ticks = 0;
   setInterval(() => {
-    ticks += 1 / FPS;
+    switch (gameState) {
+      case GameState.RES_MENU:
+        tickResMenu();
+        renderResMenu();
+        break;
+      case GameState.MENU:
+        break;
+      case GameState.PLAY:
+        tickGame();
+        renderGame();
+        break;
+    }
 
-    tick();
-    render(ticks);
-
-    let legends = fbGetRender(fb, TILE_X_COUNT, TILE_Y_COUNT);
+    let legends = fbGetRender(fb, tileXCount, tileYCount);
     api.setLegend(...(legends as [string, string][]));
 
     api.setMap(fb.map);
-    renderText(api);
+
+    switch (gameState) {
+      case GameState.RES_MENU:
+        renderResMenuText(api);
+        break;
+      case GameState.MENU:
+        break;
+      case GameState.PLAY:
+        renderGameText(api);
+        break;
+    }
   }, 1000 / FPS);
 }
 
