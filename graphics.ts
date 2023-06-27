@@ -174,7 +174,7 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
     if (
       vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) *
         cullScalar <
-        0 //&&
+      0 //&&
       // vecDot(
       //   pass.cameraFront,
       //   vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
@@ -765,6 +765,7 @@ export {
   vecNormalize,
   vec3CrossProduct,
   vecIntersectsPlane,
+  vecDot,
   type Framebuffer,
   type RenderPass,
   type ProjectionData,

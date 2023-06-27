@@ -19,6 +19,7 @@ import {
   vec3CrossProduct,
   fbClearDepth,
   vecLength,
+  vecDot,
 } from "./graphics";
 import { verticesBobPerson, verticesCube } from "./models";
 
@@ -81,7 +82,7 @@ const ENEMY_SPAWN_FREQUENCY_STAGES = [0.05, 0.1, 0.18, 0.25, 3];
 const KILL_SCREEN_STAGE = 4;
 
 const ENEMY_DAMAGE = 0.22;
-const MEDKIT_HEAL_AMOUNT = 13;
+const MEDKIT_HEAL_AMOUNT = 12;
 
 enum GameState {
   MENU,
@@ -129,6 +130,13 @@ interface Medkit {
 
 var medkit: Medkit | null = null;
 
+interface MedkitHealPopup {
+  y: number;
+}
+var medkitHealPopups: MedkitHealPopup[] = [];
+const MEDKIT_HEAD_POPUP_RISE_SPEED = 0.3;
+const MEDKIT_HEAD_POPUP_MAX_HEIGHT = 4;
+
 interface Wall {
   rot: number;
   scale: Vec3;
@@ -139,7 +147,7 @@ var walls: Wall[] = [];
 
 const MAP_BOUND = 85;
 const MAP_WALL_Y = 6;
-const MAP_WALL_MAX_SCALE = 7;
+const MAP_WALL_MAX_SCALE = 5;
 const MAP_WALL_COUNT = 30;
 const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
 
@@ -193,8 +201,8 @@ function spawnWalls() {
   walls.push(east);
 
   for (let i = 0; i < MAP_WALL_COUNT; i++) {
-    let scaleX = (Math.random() * MAP_WALL_MAX_SCALE) / 2 - MAP_WALL_MAX_SCALE;
-    let scaleZ = (Math.random() * MAP_WALL_MAX_SCALE) / 2 - MAP_WALL_MAX_SCALE;
+    let scaleX = Math.random() * MAP_WALL_MAX_SCALE + 3;
+    let scaleZ = Math.random() * MAP_WALL_MAX_SCALE + 3;
     let positionX = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
     let positionZ = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
 
@@ -213,8 +221,8 @@ function spawnWalls() {
     }
 
     if (
-      Math.abs(positionX) < MAP_WALL_MAX_SCALE ||
-      Math.abs(positionZ) < MAP_WALL_MAX_SCALE
+      Math.abs(positionX) < MAP_WALL_MAX_SCALE + 4 ||
+      Math.abs(positionZ) < MAP_WALL_MAX_SCALE + 4
     ) {
       failedWall = true;
     }
@@ -241,18 +249,35 @@ function spawnWalls() {
   }
 }
 
-function spawnMedkit() {
-  while (true) {
-    let positionX = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
-    let positionZ = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
+function spawnMedkit(argPositionX: number | null, argPositionZ: number | null) {
+  let finalPositionX = argPositionX;
+  let finalPositionZ = argPositionZ;
+  if (argPositionX == null && argPositionZ == null) {
+    while (true) {
+      let positionX = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
+      let positionZ = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
 
-    if (isNotInsideWalls([positionX, 0, positionZ])) {
-      medkit = {
-        position: [positionX, 3, positionZ],
-      };
-      break;
+      if (getCollisionWall([positionX, 0, positionZ]) == null) {
+        if (finalPositionX == null) {
+          finalPositionX = positionX;
+        }
+        if (finalPositionZ == null) {
+          finalPositionZ = positionZ;
+        }
+        break;
+      }
     }
   }
+  medkit = {
+    position: [finalPositionX!, 3, finalPositionZ!],
+  };
+}
+
+function spawnMedkitHealPopup() {
+  let popup = {
+    y: 0,
+  };
+  medkitHealPopups.push(popup);
 }
 
 function spawnEnemy(position: Vec3) {
@@ -293,7 +318,7 @@ function spawnExplosion(position: Vec3) {
 
 function tickPlayer() {
   const PLAYER_MAX_VELOCITY = 0.65;
-  const PLAYER_FRICTION_SCALAR = 0.005;
+  const PLAYER_FRICTION_SCALAR = 0.006;
 
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
@@ -311,15 +336,39 @@ function tickPlayer() {
     vecMulScalar(vecNormalize(player.velocity), -PLAYER_FRICTION_SCALAR)
   );
 
-  const PLAYER_WALL_BIAS = 3;
-
   let next_position = vecAddVec(player.position, player.velocity);
-  if (
-    isNotInsideWalls(
-      vecAddVec(next_position, vecMulScalar(player.direction, PLAYER_WALL_BIAS))
-    )
-  ) {
+  let collisionWall = getCollisionWall(next_position);
+  if (collisionWall == null) {
     player.position = next_position;
+  } else {
+    // Over-engineered bouncing.
+    let wallToPlayer = vecNormalize(
+      vecSubVec(collisionWall.position, player.position)
+    );
+    let possibleNormals: Vec3[] = [
+      [-1, 0, 0],
+      [1, 0, 0],
+      [0, -1, 0],
+      [0, 1, 0],
+      [0, 0, -1],
+      [0, 0, 1],
+    ];
+    let normal = possibleNormals[0];
+    let minDist = vecDistance(possibleNormals[0], wallToPlayer);
+    for (let i in possibleNormals) {
+      let n = possibleNormals[i];
+      let dist = vecDistance(n, wallToPlayer);
+      if (dist < minDist) {
+        minDist = dist;
+        normal = n;
+      }
+    }
+
+    let reflected = vecAddVec(
+      vecMulScalar(normal, -2 * vecDot(normal, player.velocity)),
+      player.velocity
+    );
+    player.velocity = vecMulScalar(reflected, 0.5);
   }
 }
 
@@ -342,7 +391,7 @@ function tickBullets() {
 
 function tickEnemies() {
   const ENEMY_MAX_CLOSE_UP = 1.7;
-  const ENEMY_SPEED_INCREMENT = 0.0002 * Math.abs(getStageNumber() - 2);
+  const ENEMY_SPEED_INCREMENT = 0.0003 * Math.abs(getStageNumber() - 2);
   for (let i in enemies) {
     let enemy = enemies[i];
 
@@ -354,7 +403,7 @@ function tickEnemies() {
         enemy.position,
         vecMulScalar(direction, enemy.speed)
       );
-      if (isNotInsideWalls(enemy.position)) {
+      if (getCollisionWall(enemy.position) == null) {
         enemy.position = next_position;
       } else {
         // Pretty scuffed solution, but hey.
@@ -407,18 +456,30 @@ function tickMedkit() {
   if (medkit) {
     if (vecDistance(player.position, medkit.position) <= MEDKIT_PICKUP_RANGE) {
       medkit = null;
+      spawnMedkitHealPopup();
+
       player.health += MEDKIT_HEAL_AMOUNT;
       if (player.health > PLAYER_MAX_HEALTH) {
         player.health = PLAYER_MAX_HEALTH;
       }
     }
   } else {
-    spawnMedkit();
+    spawnMedkit(null, null);
   }
 }
 
 function tickPoison() {
   player.health -= PLAYER_POISON_TICK * (getStageNumber() + 1);
+}
+
+function tickMedkitHealPopup() {
+  for (let i in medkitHealPopups) {
+    let popup = medkitHealPopups[i];
+    popup.y += MEDKIT_HEAD_POPUP_RISE_SPEED;
+  }
+  medkitHealPopups = medkitHealPopups.filter(
+    (popup) => popup.y <= MEDKIT_HEAD_POPUP_MAX_HEIGHT
+  );
 }
 
 function tickEnemySpawn() {
@@ -438,7 +499,7 @@ function tickGame() {
     playerDead = true;
     setTimeout(() => {
       gameState = GameState.MENU;
-    }, 5000);
+    }, 3000);
   }
 
   if (!playerDead) {
@@ -451,6 +512,7 @@ function tickGame() {
     tickExplosions();
     tickPoison();
     tickEnemySpawn();
+    tickMedkitHealPopup();
   } else {
     if (player.direction[1] >= -Math.PI / 2) {
       player.direction[1] -= 0.2;
@@ -464,7 +526,7 @@ function tickMenu() {
 
 // -- Collision Detection --
 
-function isNotInsideWalls(d: Vec3): boolean {
+function getCollisionWall(d: Vec3): Wall | null {
   for (let i in walls) {
     let wall = walls[i];
     let boxMinX = Math.min(
@@ -487,14 +549,12 @@ function isNotInsideWalls(d: Vec3): boolean {
       d[0] >= boxMinX &&
       d[0] <= boxMaxX &&
       d[2] >= boxMinZ &&
-      d[2] <= boxMaxZ &&
-      Math.abs(d[0]) < MAP_BOUND &&
-      Math.abs(d[2]) < MAP_BOUND
+      d[2] <= boxMaxZ
     ) {
-      return false;
+      return wall;
     }
   }
-  return true;
+  return null;
 }
 
 // -- Game Start --
@@ -526,10 +586,12 @@ function initGame() {
   bullets = [];
   explosions = [];
   medkit = null;
+  medkitHealPopups = [];
   walls = [];
   startTime = 0;
 
   spawnWalls();
+  spawnMedkit(6, 0);
 }
 
 // -- Input --
@@ -833,6 +895,14 @@ function renderGameText(api: WebEngineAPI) {
     y: 15,
     color: healthColor,
   });
+  for (let i in medkitHealPopups) {
+    let popup = medkitHealPopups[i];
+    api.addText(`+${MEDKIT_HEAL_AMOUNT}`, {
+      x: 8,
+      y: 8 - Math.floor(popup.y),
+      color: "8",
+    });
+  }
 }
 
 function renderMenuText(api: WebEngineAPI) {
