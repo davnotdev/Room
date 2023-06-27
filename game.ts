@@ -20,6 +20,7 @@ import {
   fbClearDepth,
   vecLength,
   vecDot,
+  RenderPass,
 } from "./graphics";
 import { verticesBobPerson, verticesCube } from "./models";
 
@@ -759,7 +760,7 @@ function renderGame() {
   let cameraPosition = player.position;
   let cameraFront = vecNormalize(player.direction);
 
-  let baseRenderPass: any = {
+  let baseRenderPass: RenderPass = {
     cameraPosition,
     cameraFront,
     projection: {
@@ -769,6 +770,11 @@ function renderGame() {
     },
     enableDepth: true,
     cullScalar: 1,
+
+    modelMatrix: mat4Identity(),
+    colors: '0',
+    borderColor: '0',
+    triangles: [],
   };
 
   for (let i in walls) {
