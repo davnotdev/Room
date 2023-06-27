@@ -1,5 +1,7 @@
 # ROOM
 
+It's not in the sprig gallery (yet), so [here's a demo instead](https://davnotdev.github.io/Room).
+
 ```
 //   ____    _____   _____
 // /\  _`\ /\  __`\/\  __`\  /'\_/`\
