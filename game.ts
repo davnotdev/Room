@@ -19,7 +19,7 @@ import {
   fbClearDepth,
   vecLength,
 } from "./graphics";
-import { verticesPerson, verticesCube } from "./models";
+import { verticesBobPerson, verticesCube } from "./models";
 
 //
 //   ____    _____   _____
@@ -49,17 +49,35 @@ import { verticesPerson, verticesCube } from "./models";
 
 // -- Game Globals --
 
-const FPS = 20;
+const FPS = 24;
 const TILE_X_COUNT = 10;
 const TILE_Y_COUNT = 8;
 
-const BULLET_DAMAGE = 30;
+const RES_LEVELS = [
+  [1, 1],
+  [2, 2],
+  [4, 3],
+  [5, 4],
+  [6, 6],
+  [8, 8],
+  [10, 8],
+];
+
+const ENEMY_CAP = 15;
+
+const BULLET_DAMAGE = 40;
+const BULLET_COOLDOWN_THRESHOLD = 0.14;
 
 const fb = fbNew(TILE_X_COUNT, TILE_Y_COUNT);
 
-const PLAYER_MAX_HEALTH = 500;
+const PLAYER_MAX_HEALTH = 50;
+const PLAYER_POISON_TICK = 0.012;
 
-const ENEMY_SPAWN_FREQUENCY = 10;
+const ENEMY_SPAWN_FREQUENCY_STAGES = [0.05, 0.1, 0.18, 0.25, 3];
+const KILL_SCREEN_STAGE = 4;
+
+const ENEMY_DAMAGE = 0.22;
+const MEDKIT_HEAL_AMOUNT = 13;
 
 interface Player {
   position: Vec3;
@@ -68,6 +86,7 @@ interface Player {
   health: number;
   bobTick: number;
   yaw: number;
+  lastBulletTime: number;
 }
 const player: Player = {
   position: [0, 0, 0],
@@ -76,6 +95,7 @@ const player: Player = {
   health: PLAYER_MAX_HEALTH,
   bobTick: 0,
   yaw: 0,
+  lastBulletTime: 0,
 };
 
 interface Enemy {
@@ -99,7 +119,11 @@ interface Explosion {
 }
 var explosions: Explosion[] = [];
 
-let startTime = 0;
+interface Medkit {
+  position: Vec3;
+}
+
+var medkit: Medkit | null = null;
 
 interface Wall {
   rot: number;
@@ -109,36 +133,54 @@ interface Wall {
 }
 var walls: Wall[] = [];
 
-const MAP_MAX = 75;
-const MAP_WALL_Y = 3;
-const MAP_WALL_MAX_SIZE = 5;
+const MAP_BOUND = 85;
+const MAP_WALL_Y = 6;
+const MAP_WALL_MAX_SCALE = 7;
 const MAP_WALL_COUNT = 30;
+const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
+
+let startTime = 0;
+
+function getStageNumber() {
+  console.log(startTime);
+  if (startTime <= 15) {
+    return 0;
+  } else if (startTime <= 100) {
+    return 1;
+  } else if (startTime <= 230) {
+    return 2;
+  } else if (startTime <= 999) {
+    return 3;
+  } else {
+    return KILL_SCREEN_STAGE;
+  }
+}
 
 // -- Spawn Functions --
 
 function spawnWalls() {
   let north = {
     rot: 0,
-    scale: [1, MAP_WALL_Y, MAP_MAX] as Vec3,
-    position: [MAP_MAX, 0, 0] as Vec3,
+    scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
+    position: [MAP_BOUND, 0, 0] as Vec3,
     color: "1",
   };
   let south = {
     rot: 0,
-    scale: [1, MAP_WALL_Y, MAP_MAX] as Vec3,
-    position: [-MAP_MAX, 0, 0] as Vec3,
+    scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
+    position: [-MAP_BOUND, 0, 0] as Vec3,
     color: "1",
   };
   let west = {
     rot: 0,
-    scale: [MAP_MAX, MAP_WALL_Y, 1] as Vec3,
-    position: [0, 0, MAP_MAX] as Vec3,
+    scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, MAP_BOUND] as Vec3,
     color: "1",
   };
   let east = {
     rot: 0,
-    scale: [MAP_MAX, MAP_WALL_Y, 1] as Vec3,
-    position: [0, 0, -MAP_MAX] as Vec3,
+    scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, -MAP_BOUND] as Vec3,
     color: "1",
   };
 
@@ -148,10 +190,43 @@ function spawnWalls() {
   walls.push(east);
 
   for (let i = 0; i < MAP_WALL_COUNT; i++) {
-    let scaleX = (Math.random() * MAP_WALL_MAX_SIZE) / 2 - MAP_WALL_MAX_SIZE;
-    let scaleZ = (Math.random() * MAP_WALL_MAX_SIZE) / 2 - MAP_WALL_MAX_SIZE;
-    let positionX = Math.random() * (MAP_MAX - 2) * 2 - MAP_MAX;
-    let positionZ = Math.random() * (MAP_MAX - 2) * 2 - MAP_MAX;
+    let scaleX = (Math.random() * MAP_WALL_MAX_SCALE) / 2 - MAP_WALL_MAX_SCALE;
+    let scaleZ = (Math.random() * MAP_WALL_MAX_SCALE) / 2 - MAP_WALL_MAX_SCALE;
+    let positionX = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
+    let positionZ = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
+
+    let failedWall = false;
+    for (let wi in walls) {
+      let other = walls[wi];
+      if (
+        vecDistance(
+          [other.position[0], 0, other.position[2]],
+          [positionX, 0, positionZ]
+        ) < MAP_WALL_TO_WALL_MIN_DISTANCE
+      ) {
+        failedWall = true;
+        break;
+      }
+    }
+
+    if (
+      Math.abs(positionX) < MAP_WALL_MAX_SCALE ||
+      Math.abs(positionZ) < MAP_WALL_MAX_SCALE
+    ) {
+      failedWall = true;
+    }
+
+    if (
+      MAP_BOUND - Math.abs(positionX) < 18 ||
+      MAP_BOUND - Math.abs(positionZ) < 18
+    ) {
+      failedWall = true;
+    }
+
+    if (failedWall) {
+      i--;
+      continue;
+    }
 
     let wall = {
       rot: 0,
@@ -163,9 +238,26 @@ function spawnWalls() {
   }
 }
 
+function spawnMedkit() {
+  while (true) {
+    let positionX = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
+    let positionZ = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
+
+    if (isNotInsideWalls([positionX, 0, positionZ])) {
+      medkit = {
+        position: [positionX, 3, positionZ],
+      };
+      break;
+    }
+  }
+}
+
 function spawnEnemy(position: Vec3) {
-  let randomSpeed = Math.random() * 2 + 0.3;
-  let randomHealth = Math.random() * 50 + 30;
+  if (enemies.length >= ENEMY_CAP && getStageNumber() != KILL_SCREEN_STAGE)
+    return;
+
+  let randomSpeed = Math.random() * 0.08;
+  let randomHealth = Math.random() * 100 + 40;
   let numColors = [0, 3, 5, 7, 4, 6, 8, 9];
   let randomColor = Math.floor(Math.random() * 8);
   let enemy = {
@@ -197,7 +289,7 @@ function spawnExplosion(position: Vec3) {
 // -- Tick Functions --
 
 function tickPlayer() {
-  const PLAYER_MAX_VELOCITY = 0.5;
+  const PLAYER_MAX_VELOCITY = 0.65;
   const PLAYER_FRICTION_SCALAR = 0.005;
 
   player.direction[0] = Math.cos(player.yaw);
@@ -215,7 +307,17 @@ function tickPlayer() {
     player.velocity,
     vecMulScalar(vecNormalize(player.velocity), -PLAYER_FRICTION_SCALAR)
   );
-  player.position = vecAddVec(player.position, player.velocity);
+
+  const PLAYER_WALL_BIAS = 3;
+
+  let next_position = vecAddVec(player.position, player.velocity);
+  if (
+    isNotInsideWalls(
+      vecAddVec(next_position, vecMulScalar(player.direction, PLAYER_WALL_BIAS))
+    )
+  ) {
+    player.position = next_position;
+  }
 }
 
 function tickBullets() {
@@ -236,18 +338,33 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  const ENEMY_SPEED = 0.05;
-  const ENEMY_MAX_CLOSE_UP = 1.5;
+  const ENEMY_MAX_CLOSE_UP = 1.7;
+  const ENEMY_SPEED_INCREMENT = 0.0002 * Math.abs(getStageNumber() - 2);
   for (let i in enemies) {
     let enemy = enemies[i];
+
+    enemy.speed += ENEMY_SPEED_INCREMENT;
+
     if (vecDistance(player.position, enemy.position) >= ENEMY_MAX_CLOSE_UP) {
       let direction = vecSubVec(player.position, enemy.position);
-      enemy.position = vecAddVec(
+      let next_position = vecAddVec(
         enemy.position,
-        vecMulScalar(direction, ENEMY_SPEED)
+        vecMulScalar(direction, enemy.speed)
       );
+      if (isNotInsideWalls(enemy.position)) {
+        enemy.position = next_position;
+      } else {
+        // Pretty scuffed solution, but hey.
+        enemy.position = vecAddVec(
+          enemy.position,
+          vecMulScalar(
+            vec3CrossProduct([0, 1, 0], player.direction),
+            enemy.speed
+          )
+        );
+      }
     } else {
-      player.health -= 0.1;
+      player.health -= ENEMY_DAMAGE;
     }
     if (hitByBullet(enemy.position)) {
       enemy.health -= BULLET_DAMAGE;
@@ -260,7 +377,7 @@ function tickEnemies() {
 }
 
 function hitByBullet(agent: Vec3): boolean {
-  const HITBOX_RADIUS = 1.5;
+  const HITBOX_RADIUS = 2.5;
   let newBullets = bullets.filter((bullet) => {
     return vecDistance(agent, bullet.position) >= HITBOX_RADIUS;
   });
@@ -271,8 +388,8 @@ function hitByBullet(agent: Vec3): boolean {
 }
 
 function tickExplosions() {
-  const EXPLOSION_MAX_SIZE = 4.0;
-  const EXPLOSION_GROWTH_INCREMENT = 0.6;
+  const EXPLOSION_MAX_SIZE = 2.0;
+  const EXPLOSION_GROWTH_INCREMENT = 0.3;
   for (let i in explosions) {
     let explosion = explosions[i];
     explosion.sizeScalar += EXPLOSION_GROWTH_INCREMENT;
@@ -282,21 +399,82 @@ function tickExplosions() {
   );
 }
 
-function tick() {
-  startTime += 1 / FPS;
+function tickMedkit() {
+  const MEDKIT_PICKUP_RANGE = 5;
+  if (medkit) {
+    if (vecDistance(player.position, medkit.position) <= MEDKIT_PICKUP_RANGE) {
+      medkit = null;
+      player.health += MEDKIT_HEAL_AMOUNT;
+      if (player.health > PLAYER_MAX_HEALTH) {
+        player.health = PLAYER_MAX_HEALTH;
+      }
+    }
+  } else {
+    spawnMedkit();
+  }
+}
 
-  if (Math.abs(startTime % ENEMY_SPAWN_FREQUENCY) < 0.1) {
+function tickPoison() {
+  player.health -= PLAYER_POISON_TICK * (getStageNumber() + 1);
+}
+
+function tickEnemySpawn() {
+  let spawnParam = ENEMY_SPAWN_FREQUENCY_STAGES[getStageNumber()];
+
+  if (Math.abs(startTime % 8) < spawnParam) {
     spawnEnemy([
-      Math.random() * MAP_MAX * 2 - MAP_MAX,
+      Math.random() * MAP_BOUND * 2 - MAP_BOUND,
       0,
-      Math.random() * MAP_MAX * 2 - MAP_MAX,
+      Math.random() * MAP_BOUND * 2 - MAP_BOUND,
     ]);
   }
+}
+
+function tick() {
+  startTime += 1 / FPS;
 
   tickPlayer();
   tickEnemies();
   tickBullets();
+  tickMedkit();
   tickExplosions();
+  tickPoison();
+  tickEnemySpawn();
+}
+
+// -- Collision Detection --
+
+function isNotInsideWalls(d: Vec3): boolean {
+  for (let i in walls) {
+    let wall = walls[i];
+    let boxMinX = Math.min(
+      wall.position[0] - wall.scale[0],
+      wall.position[0] + wall.scale[0]
+    );
+    let boxMaxX = Math.max(
+      wall.position[0] - wall.scale[0],
+      wall.position[0] + wall.scale[0]
+    );
+    let boxMinZ = Math.min(
+      wall.position[2] - wall.scale[2],
+      wall.position[2] + wall.scale[2]
+    );
+    let boxMaxZ = Math.max(
+      wall.position[2] - wall.scale[2],
+      wall.position[2] + wall.scale[2]
+    );
+    if (
+      d[0] >= boxMinX &&
+      d[0] <= boxMaxX &&
+      d[2] >= boxMinZ &&
+      d[2] <= boxMaxZ &&
+      Math.abs(d[0]) < MAP_BOUND &&
+      Math.abs(d[2]) < MAP_BOUND
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // -- Game Start --
@@ -312,8 +490,6 @@ function init(api: WebEngineAPI) {
   api.onInput("l", controlLookRight);
   api.onInput("k", controlLookBehind);
 
-  // for (let i = -10; i < 10; i++) spawnEnemy([-6, 0, i * 5]);
-  spawnEnemy([6, 0, 4]);
   spawnWalls();
 }
 
@@ -323,7 +499,7 @@ const PLAYER_ACCELERATION = 0.1;
 
 function playerBob() {
   player.bobTick += 1;
-  player.position[1] = Math.sin(player.bobTick * 0.8) * 0.1 + 0.1;
+  player.position[1] = Math.sin(player.bobTick * 0.8) * 0.2 + 0.1;
 }
 
 function controlForward() {
@@ -365,15 +541,18 @@ function controlRight() {
 }
 
 function controlPew() {
-  spawnBullet(player.position, player.direction);
+  if (startTime - player.lastBulletTime >= BULLET_COOLDOWN_THRESHOLD) {
+    spawnBullet(vecAddVec(player.position, [0, 2, 0]), player.direction);
+    player.lastBulletTime = startTime;
+  }
 }
 
 function controlLookLeft() {
-  player.yaw += Math.PI / 50;
+  player.yaw += Math.PI / 30;
 }
 
 function controlLookRight() {
-  player.yaw -= Math.PI / 50;
+  player.yaw -= Math.PI / 30;
 }
 
 function controlLookBehind() {
@@ -389,6 +568,18 @@ function render(ticks: number) {
   let cameraPosition = player.position;
   let cameraFront = vecNormalize(player.direction);
 
+  let baseRenderPass: any = {
+    cameraPosition,
+    cameraFront,
+    projection: {
+      fov_rad: Math.PI / 2.0,
+      near: 0.1,
+      far: 100.0,
+    },
+    enableDepth: true,
+    cullScalar: 1,
+  };
+
   for (let i in walls) {
     let wall = walls[i];
 
@@ -397,22 +588,12 @@ function render(ticks: number) {
     mv = mat4Rotate(mv, wall.rot, [0, 1, 0]);
     mv = mat4Translate(mv, wall.position);
 
-    let render_pass = {
-      cameraPosition,
-      cameraFront,
-      borderColor: "0",
-      colors: wall.color,
-      triangles: verticesCube(),
-      projection: {
-        fov_rad: Math.PI / 2.0,
-        near: 0.1,
-        far: 100.0,
-      },
-      modelMatrix: mv,
-      enableDepth: true,
-      cullScalar: 1,
-    };
-    fbRender(fb, render_pass as any);
+    baseRenderPass.modelMatrix = mv;
+    baseRenderPass.colors = "1";
+    baseRenderPass.borderColor = "0";
+    baseRenderPass.triangles = verticesCube();
+
+    fbRender(fb, baseRenderPass);
   }
 
   for (let i in enemies) {
@@ -423,22 +604,12 @@ function render(ticks: number) {
     mv = mat4Rotate(mv, ticks * 2 * enemy.color, [0, 1, 0]);
     mv = mat4Translate(mv, vecSubVec(enemy.position, [0, -2, 0]));
 
-    let render_pass = {
-      cameraPosition,
-      cameraFront,
-      borderColor: enemy.color,
-      colors: enemy.color,
-      triangles: verticesPerson(),
-      projection: {
-        fov_rad: Math.PI / 2.0,
-        near: 0.1,
-        far: 100.0,
-      },
-      modelMatrix: mv,
-      enableDepth: true,
-      cullScalar: 1,
-    };
-    fbRender(fb, render_pass as any);
+    baseRenderPass.modelMatrix = mv;
+    baseRenderPass.colors = enemy.color;
+    baseRenderPass.borderColor = enemy.color;
+    baseRenderPass.triangles = verticesBobPerson();
+
+    fbRender(fb, baseRenderPass);
   }
 
   for (let i in bullets) {
@@ -448,22 +619,12 @@ function render(ticks: number) {
     mv = mat4Translate(mv, bullet.position);
     mv = mat4Scale(mv, [0.3, 0.3, 0.3]);
 
-    let render_pass = {
-      cameraPosition,
-      cameraFront,
-      borderColor: "F",
-      colors: "F",
-      triangles: verticesCube(),
-      projection: {
-        fov_rad: Math.PI / 2.0,
-        near: 0.1,
-        far: 100.0,
-      },
-      modelMatrix: mv,
-      enableDepth: true,
-      cullScalar: 1,
-    };
-    fbRender(fb, render_pass as any);
+    baseRenderPass.modelMatrix = mv;
+    baseRenderPass.colors = "F";
+    baseRenderPass.borderColor = "F";
+    baseRenderPass.triangles = verticesCube();
+
+    fbRender(fb, baseRenderPass);
   }
 
   for (let i in explosions) {
@@ -473,22 +634,27 @@ function render(ticks: number) {
     mv = mat4Translate(mv, explosion.position);
     mv = mat4Scale(mv, vecMulScalar([1, 1, 1], explosion.sizeScalar));
 
-    let render_pass = {
-      cameraPosition,
-      cameraFront,
-      borderColor: 9,
-      colors: 9,
-      triangles: verticesCube(),
-      projection: {
-        fov_rad: Math.PI / 2.0,
-        near: 0.1,
-        far: 100.0,
-      },
-      modelMatrix: mv,
-      enableDepth: true,
-      cullScalar: 1,
-    };
-    fbRender(fb, render_pass as any);
+    baseRenderPass.modelMatrix = mv;
+    baseRenderPass.colors = "9";
+    baseRenderPass.borderColor = "9";
+    baseRenderPass.triangles = verticesCube();
+
+    fbRender(fb, baseRenderPass);
+  }
+
+  if (medkit) {
+    let mv = mat4Identity();
+    mv = mat4Scale(mv, [1.2, 0.3, 1.2]);
+    mv = mat4Rotate(mv, startTime, [0, 1, 0]);
+    mv = mat4Translate(mv, medkit.position);
+
+    baseRenderPass.modelMatrix = mv;
+    baseRenderPass.colors = "3";
+    baseRenderPass.borderColor = "3";
+    baseRenderPass.triangles = verticesCube();
+    baseRenderPass.enableDepth = false;
+
+    fbRender(fb, baseRenderPass);
   }
 }
 
@@ -500,10 +666,29 @@ function renderText(api: WebEngineAPI) {
     healthColor = "D";
   }
 
-  api.addText(`Score: ${Math.floor(startTime)}`, {
-    x: 2,
+  let stage = getStageNumber();
+  let stageStr;
+  if (stage == KILL_SCREEN_STAGE) {
+    stageStr = "Kill Screen";
+  } else {
+    stageStr = `Stage: ${getStageNumber()}`;
+  }
+
+  let stageColor;
+  if (stage == 0 || stage == 1) {
+    stageColor = "D";
+  } else if (stage == 2 || stage == 3) {
+    stageColor = "3";
+  } else {
+    stageColor = "H";
+  }
+
+  api.clearText();
+
+  api.addText(`Score: ${Math.floor(startTime)} ${stageStr}`, {
+    x: 1,
     y: 0,
-    color: "D",
+    color: stageColor,
   });
   api.addText(`Health: ${Math.floor(player.health)}/${PLAYER_MAX_HEALTH}`, {
     x: 2,

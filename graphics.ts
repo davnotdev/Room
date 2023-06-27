@@ -764,6 +764,7 @@ export {
   vecMulScalar,
   vecNormalize,
   vec3CrossProduct,
+  vecIntersectsPlane,
   type RenderPass,
   type ProjectionData,
   type Color,

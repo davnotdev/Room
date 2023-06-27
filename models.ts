@@ -1039,4 +1039,4 @@ function verticesBobPerson() {
   ];
 }
 
-export { verticesCube, verticesBobPerson as verticesPerson };
+export { verticesCube, verticesBobPerson };
