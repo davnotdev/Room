@@ -33,12 +33,6 @@ import { verticesBobPerson, verticesCube } from "./models";
 //    \ \_\ \_\ \_____\ \_____\ \_\\ \_\
 //     \/_/\/ /\/_____/\/_____/\/_/ \/_/
 //
-// Sprig is a simple console.
-// That's good. Simplicity is good.
-// Sprig is a limited console.
-// That's also good. Limitations inspire creativity.
-// But what if we ignored those limits and pushed it somewhere it's not meant to go?
-//
 // This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig.
 //
 // /   w   [oooo]   i   \
@@ -49,8 +43,17 @@ import { verticesBobPerson, verticesCube } from "./models";
 // d = Go Right     l = Look Right
 // a = Backward     k = Look Behind
 //
+// Trapped in a claustrophobic room, you must survive for as long as possible.
+// Your health slowly drains, so you must run around and collect medkits.
+// Be sure to avoid the spin-y people.
+// They are not your friend.
+//
+// Hey, why does this code look weird?
+// Well, ROOM was written in typescript and compiled into javascript.
+// The original source is at https://github.com/davnotdev/Room.
+//
 
-// -- Game Globals --
+// -- Framebuffer Globals --
 
 const FPS = 24;
 var tileXCount = 0;
@@ -71,29 +74,31 @@ const RES_LEVELS = [
 ];
 var selectedResLevel = 6;
 
-const BULLET_DAMAGE = 40;
-const BULLET_COOLDOWN_THRESHOLD = 0.12;
-
 var fb: Framebuffer;
 recreateFramebuffer();
 
+// -- Bullet Globals --
+
+const BULLET_DAMAGE = 40;
+const BULLET_COOLDOWN_THRESHOLD = 0.12;
+const BULLET_MAX_DISTANCE = 40;
+const BULLET_SPEED = 2.5;
+
+interface Bullet {
+  origin: Vec3;
+  position: Vec3;
+  direction: Vec3;
+}
+var bullets: Bullet[] = [];
+
+// -- Player Globals --
+
 const PLAYER_MAX_HEALTH = 50;
 const PLAYER_POISON_TICK = 0.01;
-
-const ENEMY_CAP_STAGES = [3, 5, 20, 30, 999];
-const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 10];
-const KILL_SCREEN_STAGE = 4;
-
-const ENEMY_DAMAGE = 0.15;
-const ENEMY_MAX_DODGE = 0.3;
-const MEDKIT_HEAL_AMOUNT = 18;
-
-enum GameState {
-  MENU,
-  PLAY,
-}
-
-var gameState = GameState.MENU;
+const PLAYER_MAX_VELOCITY = 0.65;
+const PLAYER_FRICTION_SCALAR = 0.006;
+const PLAYER_WALL_BOUNCE_SCALAR = 0.8;
+const PLAYER_ACCELERATION = 0.1;
 
 interface Player {
   position: Vec3;
@@ -107,6 +112,28 @@ interface Player {
 var player: Player;
 var playerDead: boolean = false;
 
+const MEDKIT_HEAL_AMOUNT = 18;
+const MEDKIT_PICKUP_RANGE = 5;
+const MEDKIT_POPUP_RISE_SPEED = 0.3;
+const MEDKIT_POPUP_MAX_HEIGHT = 4;
+
+interface Medkit {
+  position: Vec3;
+}
+var medkit: Medkit | null = null;
+
+interface MedkitHealPopup {
+  y: number;
+}
+var medkitHealPopups: MedkitHealPopup[] = [];
+
+// -- Enemy Globals --
+
+const ENEMY_DAMAGE = 0.15;
+const ENEMY_MAX_DODGE = 0.3;
+const ENEMY_REACH = 1.8;
+const ENEMY_SPEED_INCREMENT_SCALAR = 0.0004;
+
 interface Enemy {
   speed: number;
   health: number;
@@ -116,12 +143,16 @@ interface Enemy {
 }
 var enemies: Enemy[] = [];
 
-interface Bullet {
-  origin: Vec3;
-  position: Vec3;
-  direction: Vec3;
-}
-var bullets: Bullet[] = [];
+// -- Stage Globals --
+
+const ENEMY_CAP_STAGES = [3, 5, 20, 30, 999];
+const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 10];
+const KILL_SCREEN_STAGE = 4;
+
+// -- Explosion Globals --
+
+const EXPLOSION_MAX_SIZE = 2.0;
+const EXPLOSION_GROWTH_INCREMENT = 0.3;
 
 interface Explosion {
   position: Vec3;
@@ -129,32 +160,20 @@ interface Explosion {
 }
 var explosions: Explosion[] = [];
 
-interface Medkit {
-  position: Vec3;
-}
-
-var medkit: Medkit | null = null;
-
-interface MedkitHealPopup {
-  y: number;
-}
-var medkitHealPopups: MedkitHealPopup[] = [];
-const MEDKIT_HEAD_POPUP_RISE_SPEED = 0.3;
-const MEDKIT_HEAD_POPUP_MAX_HEIGHT = 4;
-
-interface Wall {
-  rot: number;
-  scale: Vec3;
-  position: Vec3;
-  color: Color;
-}
-var walls: Wall[] = [];
+// -- Wall Globals --
 
 const MAP_BOUND = 85;
 const MAP_WALL_Y = 6;
 const MAP_WALL_MAX_SCALE = 5;
 const MAP_WALL_COUNT = 30;
 const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
+
+interface Wall {
+  scale: Vec3;
+  position: Vec3;
+  color: Color;
+}
+var walls: Wall[] = [];
 
 let startTime = 0;
 
@@ -172,29 +191,34 @@ function getStageNumber() {
   }
 }
 
+// -- Game State --
+
+enum GameState {
+  MENU,
+  PLAY,
+}
+
+var gameState = GameState.MENU;
+
 // -- Spawn Functions --
 
 function spawnWalls() {
   let north = {
-    rot: 0,
     scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
     position: [MAP_BOUND, 0, 0] as Vec3,
     color: "1",
   };
   let south = {
-    rot: 0,
     scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
     position: [-MAP_BOUND, 0, 0] as Vec3,
     color: "1",
   };
   let west = {
-    rot: 0,
     scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
     position: [0, 0, MAP_BOUND] as Vec3,
     color: "1",
   };
   let east = {
-    rot: 0,
     scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
     position: [0, 0, -MAP_BOUND] as Vec3,
     color: "1",
@@ -245,7 +269,6 @@ function spawnWalls() {
     }
 
     let wall = {
-      rot: 0,
       scale: [scaleX, MAP_WALL_Y, scaleZ] as Vec3,
       position: [positionX, 0, positionZ] as Vec3,
       color: "1",
@@ -327,16 +350,52 @@ function spawnExplosion(position: Vec3) {
   explosions.push(explosion);
 }
 
+// -- Game Start --
+
+function initInput(api: WebEngineAPI) {
+  api.onInput("w", inputLeftUp);
+  api.onInput("s", inputLeftDown);
+  api.onInput("a", inputLeftLeft);
+  api.onInput("d", inputLeftRight);
+
+  api.onInput("i", inputRightUp);
+  api.onInput("j", inputRightLeft);
+  api.onInput("l", inputRightRight);
+  api.onInput("k", inputRightDown);
+}
+
+function initGame() {
+  player = {
+    position: [0, 0, 0],
+    velocity: [0, 0, 0],
+    direction: [1, 0, 0],
+    health: PLAYER_MAX_HEALTH - MEDKIT_HEAL_AMOUNT,
+    bobTick: 0,
+    yaw: 0,
+    lastBulletTime: 0,
+  };
+  playerDead = false;
+  enemies = [];
+  bullets = [];
+  explosions = [];
+  medkit = null;
+  medkitHealPopups = [];
+  walls = [];
+  startTime = 0;
+
+  spawnWalls();
+  spawnMedkit(6, 0);
+}
+
 // -- Tick Functions --
 
 function tickPlayer() {
-  const PLAYER_MAX_VELOCITY = 0.65;
-  const PLAYER_FRICTION_SCALAR = 0.006;
-
+  // Look in the direction you should be looking.
   player.direction[0] = Math.cos(player.yaw);
   player.direction[2] = Math.sin(player.yaw);
   player.direction = vecNormalize(player.direction);
 
+  // Cap the speed.
   if (vecLength(player.velocity) > PLAYER_MAX_VELOCITY) {
     player.velocity = vecMulScalar(
       vecNormalize(player.velocity),
@@ -344,21 +403,23 @@ function tickPlayer() {
     );
   }
 
+  // Friction.
   player.velocity = vecAddVec(
     player.velocity,
     vecMulScalar(vecNormalize(player.velocity), -PLAYER_FRICTION_SCALAR)
   );
 
+  // Move forward unless if there's a wall (then you should bounce!).
   let next_position = vecAddVec(player.position, player.velocity);
   let collisionWall = getCollisionWall(next_position);
   if (collisionWall == null) {
     player.position = next_position;
   } else {
-    const PLAYER_WALL_BOUNCE_SCALAR = 0.8;
     // Over-engineered bouncing.
     let wallToPlayer = vecNormalize(
       vecSubVec(collisionWall.position, player.position)
     );
+    // Well, our walls are never rotated anyway ¯\_ (ツ)_/¯.
     let possibleNormals: Vec3[] = [
       [-1, 0, 0],
       [1, 0, 0],
@@ -387,8 +448,7 @@ function tickPlayer() {
 }
 
 function tickBullets() {
-  const BULLET_MAX_DISTANCE = 30;
-  const BULLET_SPEED = 2;
+  // Bullet go forward.
   for (let i in bullets) {
     let bullet = bullets[i];
     bullet.position = vecAddVec(
@@ -397,6 +457,7 @@ function tickBullets() {
     );
   }
 
+  // Remove bullets that have gone too far.
   bullets = bullets.filter(
     (bullet) =>
       vecDistance(bullet.position, bullet.origin) <= BULLET_MAX_DISTANCE
@@ -404,15 +465,17 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  const ENEMY_MAX_CLOSE_UP = 1.8;
-  const ENEMY_SPEED_INCREMENT = 0.0004 * getStageNumber();
+  let enemySpeedIncrement = ENEMY_SPEED_INCREMENT_SCALAR * getStageNumber();
   for (let i in enemies) {
     let enemy = enemies[i];
 
-    enemy.speed += ENEMY_SPEED_INCREMENT;
+    // Add speed. They will always outrun you. (Not really.)
+    enemy.speed += enemySpeedIncrement;
 
-    if (vecDistance(player.position, enemy.position) >= ENEMY_MAX_CLOSE_UP) {
+    // Get closer if enemy isn't already too close.
+    if (vecDistance(player.position, enemy.position) >= ENEMY_REACH) {
       let direction = vecNormalize(vecSubVec(player.position, enemy.position));
+      // Adding dodge makes things more interesting.
       let dodgeDirection = vecMulScalar(
         vec3CrossProduct(direction, [0, 1, 0]),
         Math.sin(startTime * 6 * enemy.dodgeEntropy) * enemy.dodgeEntropy
@@ -422,6 +485,7 @@ function tickEnemies() {
         vecMulScalar(direction, enemy.speed)
       );
       next_position = vecAddVec(next_position, dodgeDirection);
+      // Don't go through walls. Go around instead. (Or try to anyway.)
       if (getCollisionWall(enemy.position) == null) {
         enemy.position = next_position;
       } else {
@@ -435,8 +499,10 @@ function tickEnemies() {
         );
       }
     } else {
+      // BAM. Attack the player.
       player.health -= ENEMY_DAMAGE;
     }
+    // BAM. Attacked by player.
     if (hitByBullet(enemy.position)) {
       enemy.health -= BULLET_DAMAGE;
       if (enemy.health <= 0) {
@@ -444,9 +510,12 @@ function tickEnemies() {
       }
     }
   }
+  // Remove the deceased.
   enemies = enemies.filter((enemy) => enemy.health > 0);
 }
 
+// Check if hit by bullet.
+// Destroy the bullet if so.
 function hitByBullet(agent: Vec3): boolean {
   const HITBOX_RADIUS = 2.5;
   let newBullets = bullets.filter((bullet) => {
@@ -459,20 +528,20 @@ function hitByBullet(agent: Vec3): boolean {
 }
 
 function tickExplosions() {
-  const EXPLOSION_MAX_SIZE = 2.0;
-  const EXPLOSION_GROWTH_INCREMENT = 0.3;
+  // BOOM!
   for (let i in explosions) {
     let explosion = explosions[i];
     explosion.sizeScalar += EXPLOSION_GROWTH_INCREMENT;
   }
+  // If too big, remove.
   explosions = explosions.filter(
     (explosion) => explosion.sizeScalar <= EXPLOSION_MAX_SIZE
   );
 }
 
 function tickMedkit() {
-  const MEDKIT_PICKUP_RANGE = 5;
   if (medkit) {
+    // Pick up the medkit if it's close enough.
     if (vecDistance(player.position, medkit.position) <= MEDKIT_PICKUP_RANGE) {
       medkit = null;
       spawnMedkitHealPopup();
@@ -483,6 +552,7 @@ function tickMedkit() {
       }
     }
   } else {
+    // Spawn medkit if there isn't aleady one.
     spawnMedkit(null, null);
   }
 }
@@ -492,16 +562,19 @@ function tickPoison() {
 }
 
 function tickMedkitHealPopup() {
+  // Popup go up.
   for (let i in medkitHealPopups) {
     let popup = medkitHealPopups[i];
-    popup.y += MEDKIT_HEAD_POPUP_RISE_SPEED;
+    popup.y += MEDKIT_POPUP_RISE_SPEED;
   }
+  // Popup go away.
   medkitHealPopups = medkitHealPopups.filter(
-    (popup) => popup.y <= MEDKIT_HEAD_POPUP_MAX_HEIGHT
+    (popup) => popup.y <= MEDKIT_POPUP_MAX_HEIGHT
   );
 }
 
 function tickEnemySpawn() {
+  // Spawn enemies based on stage #.
   let spawnParam = ENEMY_SPAWN_FREQUENCY_STAGES[getStageNumber()];
 
   if (Math.abs(startTime % 8) < spawnParam) {
@@ -514,6 +587,7 @@ function tickEnemySpawn() {
 }
 
 function tickGame() {
+  // Game over.
   if (player.health <= 0) {
     playerDead = true;
     setTimeout(() => {
@@ -533,6 +607,7 @@ function tickGame() {
     tickEnemySpawn();
     tickMedkitHealPopup();
   } else {
+    // Look up when you die.
     if (player.direction[1] >= -Math.PI / 2) {
       player.direction[1] -= 0.2;
     }
@@ -576,46 +651,7 @@ function getCollisionWall(d: Vec3): Wall | null {
   return null;
 }
 
-// -- Game Start --
-
-function initInput(api: WebEngineAPI) {
-  api.onInput("w", inputLeftUp);
-  api.onInput("s", inputLeftDown);
-  api.onInput("a", inputLeftLeft);
-  api.onInput("d", inputLeftRight);
-
-  api.onInput("i", inputRightUp);
-  api.onInput("j", inputRightLeft);
-  api.onInput("l", inputRightRight);
-  api.onInput("k", inputRightDown);
-}
-
-function initGame() {
-  player = {
-    position: [0, 0, 0],
-    velocity: [0, 0, 0],
-    direction: [1, 0, 0],
-    health: PLAYER_MAX_HEALTH - MEDKIT_HEAL_AMOUNT,
-    bobTick: 0,
-    yaw: 0,
-    lastBulletTime: 0,
-  };
-  playerDead = false;
-  enemies = [];
-  bullets = [];
-  explosions = [];
-  medkit = null;
-  medkitHealPopups = [];
-  walls = [];
-  startTime = 0;
-
-  spawnWalls();
-  spawnMedkit(6, 0);
-}
-
 // -- Input --
-
-const PLAYER_ACCELERATION = 0.1;
 
 function playerBob() {
   player.bobTick += 1;
@@ -772,8 +808,8 @@ function renderGame() {
     cullScalar: 1,
 
     modelMatrix: mat4Identity(),
-    colors: '0',
-    borderColor: '0',
+    colors: "0",
+    borderColor: "0",
     triangles: [],
   };
 
@@ -782,7 +818,6 @@ function renderGame() {
 
     let mv = mat4Identity();
     mv = mat4Scale(mv, wall.scale);
-    mv = mat4Rotate(mv, wall.rot, [0, 1, 0]);
     mv = mat4Translate(mv, wall.position);
 
     baseRenderPass.modelMatrix = mv;
@@ -985,7 +1020,7 @@ function initEngine(api: WebEngineAPI) {
     }
 
     let legends = fbGetRender(fb, tileXCount, tileYCount);
-    api.setLegend(...(legends as [string, string][]));
+    api.setLegend(...legends);
 
     api.setMap(fb.map);
 

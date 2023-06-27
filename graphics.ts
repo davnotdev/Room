@@ -1,3 +1,35 @@
+// This is ROOM's software rasterizer.
+// There are some things you should be aware of.
+//
+// 1:
+// This works by rendering out to sprites called "tiles".
+// These tiles are then laid out on the map.
+// (The map is created ahead of time.)
+//
+// 2:
+// Depth testing is backwards.
+// Referencing ROOM's code, the depth is checked like so:
+// `z != null && z < fb.fbDepth[idx]`
+// This means that you should do this to clear the depth buffer:
+// fbClearDepth(fb, 1000);
+//
+// 3:
+// Depth values are not interpolated.
+// This results in strange bugs but is good enough for ROOM.
+//
+// 4:
+// Matrices are row major, NOT column major.
+//
+// 5.
+// Angles are ALWAYS specified in radians.
+//
+// ---
+//
+// Have fun playing around with this :)
+//
+
+// -- Rendering Types --
+
 type Color = number | string;
 type Depth = number;
 
@@ -9,12 +41,6 @@ interface Framebuffer {
   map: string;
 }
 
-//  Row major
-type Mat4 = [Vec4, Vec4, Vec4, Vec4];
-
-type Vec3 = [number, number, number];
-type Vec4 = [number, number, number, number];
-
 interface ProjectionData {
   fov_rad: number;
   near: number;
@@ -22,27 +48,48 @@ interface ProjectionData {
 }
 
 interface RenderPass {
+// Normalized vector representing camera's direction.
   cameraFront: Vec3;
   cameraPosition: Vec3;
   triangles: number[];
   modelMatrix: Mat4;
   projection: ProjectionData | null | undefined;
+// In array form, you can provide a color to each triangle.
   colors: Color | Color[] | null | undefined;
   borderColor: Color | null | undefined;
+// Either leave this null or 1.
+// Set to -1 to cull front faces.
   cullScalar: number | null;
   enableDepth: boolean | null | undefined;
 }
 
+// -- Math Types --
+
+// Row major
+type Mat4 = [Vec4, Vec4, Vec4, Vec4];
+
+type Vec3 = [number, number, number];
+type Vec4 = [number, number, number, number];
+
+// -- Framebuffer Functions --
+
+// We need a unique character to represent each tile.
 function fbGetLegendIdent(tilesXCount: number, tileX: number, tileY: number) {
   return String.fromCharCode(tileX + tilesXCount * tileY + 48);
 }
 
+// Render into legends.
+// From ROOM's code:
+// ```
+// let legends = fbGetRender(fb, tileXCount, tileYCount);
+// setLegend(...legends);
+// ```
 function fbGetRender(
   fb: Framebuffer,
   tilesXCount: number,
   tilesYCount: number
-): string[][] {
-  let legends = [];
+): [string, string][] {
+  let legends: [string, string][] = [];
 
   for (let yi = 0; yi < tilesYCount; yi++) {
     for (let xi = 0; xi < tilesXCount; xi++) {
@@ -127,6 +174,7 @@ function fbClearColor(fb: Framebuffer, color: Color) {
   }
 }
 
+// Read my note about depth at the top of the file.
 function fbClearDepth(fb: Framebuffer, depth: Depth) {
   for (let y = 0; y < fb.height; y++) {
     for (let x = 0; x < fb.width; x++) {
@@ -153,6 +201,7 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
       pass.triangles[i + 2 + 6],
     ] as Vec3;
 
+    // Local Space => World Space
     let worldVertexA = vec4IntoVec3(
       mat4MulVec4(pass.modelMatrix, [...vertexA, 1])
     );
@@ -170,26 +219,25 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
       )
     );
 
+    // Cull out faces that are away from the camera.
     let cullScalar = pass.cullScalar != null ? pass.cullScalar : 1;
     if (
       vecDot(normal, vecSubVec(worldVertexA, pass.cameraPosition)) *
         cullScalar <
-      0 //&&
-      // vecDot(
-      //   pass.cameraFront,
-      //   vecNormalize(vecSubVec(worldVertexA, pass.cameraPosition))
-      // ) > 0
+      0
     ) {
       let view = mat4GetLookAt(
         pass.cameraPosition,
         vecAddVec(pass.cameraPosition, pass.cameraFront),
         [0, 1, 0]
       );
-
+      
+      // World Space => View Space
       let viewVertexA = vec4IntoVec3(mat4MulVec4(view, [...worldVertexA, 1]));
       let viewVertexB = vec4IntoVec3(mat4MulVec4(view, [...worldVertexB, 1]));
       let viewVertexC = vec4IntoVec3(mat4MulVec4(view, [...worldVertexC, 1]));
 
+      // Depth clipping: remove triangles behind the camera.
       let clippedTriangles;
       if (pass.projection != null) {
         clippedTriangles = triangleClipPlane(
@@ -213,6 +261,7 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
             projectionData.far
           );
 
+          // View Space => Clip Space
           let projectedVertexA = mat4MulVec4(projection, [...triangle[0], 1]);
           let projectedVertexB = mat4MulVec4(projection, [...triangle[1], 1]);
           let projectedVertexC = mat4MulVec4(projection, [...triangle[2], 1]);
@@ -222,22 +271,22 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
           vertexC = vec4IntoVec3(vec4ScaleWithW(projectedVertexC));
         }
 
+        // Clip Space => Screen Space
         vertexA = vecAddScalar(vertexA, 1.0);
         vertexB = vecAddScalar(vertexB, 1.0);
         vertexC = vecAddScalar(vertexC, 1.0);
-
         vertexA[0] *= fb.width * 0.5;
         vertexB[0] *= fb.width * 0.5;
         vertexC[0] *= fb.width * 0.5;
-
         vertexA[1] *= fb.height * 0.5;
         vertexB[1] *= fb.height * 0.5;
         vertexC[1] *= fb.height * 0.5;
-
         vertexA[2] *= fb.width * 0.5;
         vertexB[2] *= fb.width * 0.5;
         vertexC[2] *= fb.width * 0.5;
 
+        // Clip out vertices outside the view frustum.
+        // New triangles may be formed here.
         let finalTriangles: [Vec3, Vec3, Vec3][] = [];
         finalTriangles.push([vertexA, vertexB, vertexC]);
         let testPlanes: [Vec3, Vec3][] = [
@@ -272,6 +321,7 @@ function fbRender(fb: Framebuffer, pass: RenderPass) {
           finalTriangles = nextTests;
         }
 
+        // Draw the triangles left.
         for (let t in finalTriangles) {
           let finalTriangle = finalTriangles[t];
           let vertexA = finalTriangle[0] as Vec3;
@@ -434,6 +484,8 @@ function fbFillTriangle(
   }
 }
 
+// -- Matrix 4 Functions --
+
 function mat4Identity(): Mat4 {
   return [
     [1.0, 0.0, 0.0, 0.0],
@@ -561,6 +613,8 @@ function mat4MulVec4(mat: Mat4, vec: Vec4): Vec4 {
   return result;
 }
 
+// -- Vector 4 Functions --
+
 function vec4ScaleWithW(vec: Vec4): Vec4 {
   let result = Array.from(vec) as Vec4;
   if (result[3] != 0) {
@@ -575,6 +629,8 @@ function vec4IntoVec3(vec: Vec4): Vec3 {
   return [vec[0], vec[1], vec[2]];
 }
 
+// -- Vector 3 Functions --
+
 function vec3CrossProduct(a: Vec3, b: Vec3): Vec3 {
   let result = [0.0, 0.0, 0.0] as Vec3;
   result[0] = a[1] * b[2] - a[2] * b[1];
@@ -582,6 +638,8 @@ function vec3CrossProduct(a: Vec3, b: Vec3): Vec3 {
   result[2] = a[0] * b[1] - a[1] * b[0];
   return result;
 }
+
+// -- General Vector Functions --
 
 function vecAddVec<V extends Vec3 | Vec4>(a: V, b: V): V {
   let result = Array.from(a) as V;
@@ -642,6 +700,8 @@ function vecLength<V extends Vec3 | Vec4>(v: V): number {
   }
   return Math.sqrt(sqsum);
 }
+
+// -- Clipping --
 
 function vecIntersectsPlane<V extends Vec3 | Vec4>(
   planePoint: V,
