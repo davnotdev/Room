@@ -30,7 +30,7 @@ import {
   soundDeath,
   soundEnemyAttack,
   soundStageUp,
-  soundResolutionChange,
+  soundSettingChange,
   soundMenuMusic,
 } from "./sounds";
 
@@ -110,7 +110,7 @@ const PLAYER_POISON_TICK = 0.01;
 const PLAYER_MAX_VELOCITY = 0.65;
 const PLAYER_FRICTION_SCALAR = 0.006;
 const PLAYER_WALL_BOUNCE_SCALAR = 0.8;
-const PLAYER_ACCELERATION = 0.1;
+const PLAYER_ACCELERATION = 0.13;
 
 interface Player {
   position: Vec3;
@@ -125,6 +125,8 @@ var player: Player;
 var playerDead: boolean = false;
 
 const MEDKIT_HEAL_AMOUNT = 18;
+const MEDKIT_PLAYER_SPAWN_MIN_RADIUS = 40;
+const MEDKIT_PLAYER_SPAWN_MAX_RADIUS = 200;
 const MEDKIT_PICKUP_RANGE = 5;
 const MEDKIT_POPUP_RISE_SPEED = 0.3;
 const MEDKIT_POPUP_MAX_HEIGHT = 4;
@@ -145,6 +147,8 @@ const ENEMY_DAMAGE = 0.2;
 const ENEMY_MAX_DODGE = 0.3;
 const ENEMY_REACH = 1.8;
 const ENEMY_SPEED_INCREMENT_SCALAR = 0.0006;
+const ENEMY_PLAYER_SPAWN_MIN_RADIUS = 60;
+const ENEMY_PLAYER_SPAWN_MAX_RADIUS = 350;
 
 interface Enemy {
   speed: number;
@@ -179,7 +183,6 @@ function getStageNumber() {
   }
 }
 
-
 // -- Explosion Globals --
 
 const EXPLOSION_MAX_SIZE = 2.0;
@@ -191,12 +194,63 @@ interface Explosion {
 }
 var explosions: Explosion[] = [];
 
-// -- Wall Globals --
+// -- Map Settings --
 
-const MAP_BOUND = 85;
+interface MapSetting {
+  name: string;
+  bound: number;
+  wallCount: number;
+  wallMaxScale: number;
+}
+
+const MAP_SETTINGS: MapSetting[] = [
+  {
+    name: "SS ",
+    bound: 60,
+    wallCount: 12,
+    wallMaxScale: 4,
+  },
+  {
+    name: " S ",
+    bound: 75,
+    wallCount: 24,
+    wallMaxScale: 4,
+  },
+  {
+    name: " M ",
+    bound: 85,
+    wallCount: 30,
+    wallMaxScale: 5,
+  },
+  {
+    name: " L ",
+    bound: 100,
+    wallCount: 40,
+    wallMaxScale: 7,
+  },
+  {
+    name: "XL ",
+    bound: 150,
+    wallCount: 110,
+
+    wallMaxScale: 8,
+  },
+  {
+    name: "XXL",
+    bound: 500,
+    wallCount: 1300,
+    wallMaxScale: 12,
+  },
+  {
+    name: "XXX",
+    bound: 800,
+    wallCount: 2500,
+    wallMaxScale: 12,
+  },
+];
+var selectedMapSetting = 2;
+
 const MAP_WALL_Y = 6;
-const MAP_WALL_MAX_SCALE = 5;
-const MAP_WALL_COUNT = 30;
 const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
 
 interface Wall {
@@ -206,7 +260,18 @@ interface Wall {
 }
 var walls: Wall[] = [];
 
-let startTime = 0;
+function incMapSetting() {
+  api.playTune(soundSettingChange());
+  selectedMapSetting += 1;
+  if (selectedMapSetting >= MAP_SETTINGS.length)
+    selectedMapSetting = MAP_SETTINGS.length - 1;
+}
+
+function decMapSetting() {
+  api.playTune(soundSettingChange());
+  selectedMapSetting -= 1;
+  if (selectedMapSetting < 0) selectedMapSetting = 0;
+}
 
 // -- Game State --
 
@@ -216,28 +281,31 @@ enum GameState {
 }
 
 var gameState = GameState.MENU;
+let startTime = 0;
 
 // -- Spawn Functions --
 
 function spawnWalls() {
+  let settings = MAP_SETTINGS[selectedMapSetting];
+
   let north = {
-    scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
-    position: [MAP_BOUND, 0, 0] as Vec3,
+    scale: [1, MAP_WALL_Y, settings.bound] as Vec3,
+    position: [settings.bound, 0, 0] as Vec3,
     color: "1",
   };
   let south = {
-    scale: [1, MAP_WALL_Y, MAP_BOUND] as Vec3,
-    position: [-MAP_BOUND, 0, 0] as Vec3,
+    scale: [1, MAP_WALL_Y, settings.bound] as Vec3,
+    position: [-settings.bound, 0, 0] as Vec3,
     color: "1",
   };
   let west = {
-    scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
-    position: [0, 0, MAP_BOUND] as Vec3,
+    scale: [settings.bound, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, settings.bound] as Vec3,
     color: "1",
   };
   let east = {
-    scale: [MAP_BOUND, MAP_WALL_Y, 1] as Vec3,
-    position: [0, 0, -MAP_BOUND] as Vec3,
+    scale: [settings.bound, MAP_WALL_Y, 1] as Vec3,
+    position: [0, 0, -settings.bound] as Vec3,
     color: "1",
   };
 
@@ -246,11 +314,11 @@ function spawnWalls() {
   walls.push(west);
   walls.push(east);
 
-  for (let i = 0; i < MAP_WALL_COUNT; i++) {
-    let scaleX = Math.random() * MAP_WALL_MAX_SCALE + 3;
-    let scaleZ = Math.random() * MAP_WALL_MAX_SCALE + 3;
-    let positionX = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
-    let positionZ = Math.random() * (MAP_BOUND - 2) * 2 - MAP_BOUND;
+  for (let i = 0; i < settings.wallCount; i++) {
+    let scaleX = Math.random() * settings.wallMaxScale + 3;
+    let scaleZ = Math.random() * settings.wallMaxScale + 3;
+    let positionX = Math.random() * (settings.bound - 2) * 2 - settings.bound;
+    let positionZ = Math.random() * (settings.bound - 2) * 2 - settings.bound;
 
     let failedWall = false;
     for (let wi in walls) {
@@ -267,15 +335,15 @@ function spawnWalls() {
     }
 
     if (
-      Math.abs(positionX) < MAP_WALL_MAX_SCALE + 4 ||
-      Math.abs(positionZ) < MAP_WALL_MAX_SCALE + 4
+      Math.abs(positionX) < settings.wallMaxScale + 4 ||
+      Math.abs(positionZ) < settings.wallMaxScale + 4
     ) {
       failedWall = true;
     }
 
     if (
-      MAP_BOUND - Math.abs(positionX) < 18 ||
-      MAP_BOUND - Math.abs(positionZ) < 18
+      settings.bound - Math.abs(positionX) < 18 ||
+      settings.bound - Math.abs(positionZ) < 18
     ) {
       failedWall = true;
     }
@@ -298,11 +366,21 @@ function spawnMedkit(argPositionX: number | null, argPositionZ: number | null) {
   let finalPositionX = argPositionX;
   let finalPositionZ = argPositionZ;
   if (argPositionX == null && argPositionZ == null) {
+    let mapSetting = MAP_SETTINGS[selectedMapSetting];
     while (true) {
-      let positionX = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
-      let positionZ = Math.random() * MAP_BOUND * 2 - MAP_BOUND;
+      let positionX = Math.random() * mapSetting.bound * 2 - mapSetting.bound;
+      let positionZ = Math.random() * mapSetting.bound * 2 - mapSetting.bound;
 
-      if (getCollisionWall([positionX, 0, positionZ]) == null) {
+      let distToPlayer = vecDistance(player.position, [
+        positionX,
+        0,
+        positionZ,
+      ]);
+      if (
+        getCollisionWall([positionX, 0, positionZ]) == null &&
+        distToPlayer <= MEDKIT_PLAYER_SPAWN_MAX_RADIUS &&
+        distToPlayer >= MEDKIT_PLAYER_SPAWN_MIN_RADIUS
+      ) {
         if (finalPositionX == null) {
           finalPositionX = positionX;
         }
@@ -325,10 +403,25 @@ function spawnMedkitHealPopup() {
   medkitHealPopups.push(popup);
 }
 
-function spawnEnemy(position: Vec3) {
+function spawnEnemy() {
   let stage = getStageNumber();
-  if (enemies.length >= ENEMY_CAP_STAGES[stage])
-    return;
+  if (enemies.length >= ENEMY_CAP_STAGES[stage]) return;
+
+  let mapSetting = MAP_SETTINGS[selectedMapSetting];
+
+  let position;
+  while (true) {
+    let positionX = Math.random() * mapSetting.bound * 2 - mapSetting.bound;
+    let positionY = Math.random() * mapSetting.bound * 2 - mapSetting.bound;
+    position = [positionX, 0, positionY] as Vec3;
+    let distToPlayer = vecDistance(player.position, position);
+    if (
+      distToPlayer >= ENEMY_PLAYER_SPAWN_MIN_RADIUS &&
+      distToPlayer <= ENEMY_PLAYER_SPAWN_MAX_RADIUS
+    ) {
+      break;
+    }
+  }
 
   let randomSpeed = Math.random() * 0.4 + 0.1;
   let randomHealth = Math.random() * 100 + 40;
@@ -434,6 +527,7 @@ function tickPlayer() {
   if (collisionWall == null) {
     player.position = next_position;
   } else {
+    api.playTune(soundPew());
     // Over-engineered bouncing.
     let wallToPlayer = vecNormalize(
       vecSubVec(collisionWall.position, player.position)
@@ -599,11 +693,7 @@ function tickEnemySpawn() {
   let spawnParam = ENEMY_SPAWN_FREQUENCY_STAGES[getStageNumber()];
 
   if (Math.abs(startTime % 8) < spawnParam) {
-    spawnEnemy([
-      Math.random() * MAP_BOUND * 2 - MAP_BOUND,
-      0,
-      Math.random() * MAP_BOUND * 2 - MAP_BOUND,
-    ]);
+    spawnEnemy();
   }
 }
 
@@ -778,6 +868,7 @@ function inputRightDown() {
 function inputRightLeft() {
   switch (gameState) {
     case GameState.MENU:
+      decMapSetting();
       break;
     case GameState.PLAY:
       player.yaw += Math.PI / 30;
@@ -788,6 +879,7 @@ function inputRightLeft() {
 function inputRightRight() {
   switch (gameState) {
     case GameState.MENU:
+      incMapSetting();
       break;
     case GameState.PLAY:
       player.yaw -= Math.PI / 30;
@@ -798,7 +890,7 @@ function inputRightRight() {
 // -- Renderer --
 
 function incrementRes() {
-  api.playTune(soundResolutionChange());
+  api.playTune(soundSettingChange());
   selectedResLevel += 1;
   if (selectedResLevel >= RES_LEVELS.length)
     selectedResLevel = RES_LEVELS.length - 1;
@@ -806,7 +898,7 @@ function incrementRes() {
 }
 
 function decrementRes() {
-  api.playTune(soundResolutionChange());
+  api.playTune(soundSettingChange());
   selectedResLevel -= 1;
   if (selectedResLevel < 0) selectedResLevel = 0;
   recreateFramebuffer();
@@ -882,8 +974,8 @@ function renderGame() {
     mv = mat4Scale(mv, [0.3, 0.3, 0.3]);
 
     baseRenderPass.modelMatrix = mv;
-    baseRenderPass.colors = "F";
-    baseRenderPass.borderColor = "F";
+    baseRenderPass.colors = "6";
+    baseRenderPass.borderColor = "6";
     baseRenderPass.triangles = verticesCube();
 
     fbRender(fb, baseRenderPass);
@@ -1003,19 +1095,24 @@ function renderMenuText() {
     color: "2",
   });
 
-  api.addText("Use i & k", {
-    x: 8,
-    y: 3,
-    color: "2",
-  });
-  api.addText("to adjust", {
-    x: 8,
-    y: 4,
+  api.addText("i & k:", {
+    x: 10,
+    y: 2,
     color: "2",
   });
   api.addText("resolution", {
     x: 8,
+    y: 3,
+    color: "2",
+  });
+  api.addText("j & l:", {
+    x: 10,
     y: 5,
+    color: "2",
+  });
+  api.addText("map", {
+    x: 11,
+    y: 6,
     color: "2",
   });
   api.addText("W to Begin", {
@@ -1027,7 +1124,14 @@ function renderMenuText() {
   let res = RES_LEVELS[selectedResLevel];
   api.addText(`(${res[0]}:${res[1]})`, {
     x: 10,
-    y: 8,
+    y: 9,
+    color: "2",
+  });
+
+  let mapSetting = MAP_SETTINGS[selectedMapSetting];
+  api.addText(`(${mapSetting.name})`, {
+    x: 10,
+    y: 10,
     color: "2",
   });
 }

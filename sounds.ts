@@ -44,7 +44,7 @@ function soundStageUp(): string {
 3480`;
 }
 
-function soundResolutionChange(): string {
+function soundSettingChange(): string {
   return `
 666.6666666666666: C5^666.6666666666666,
 20666.666666666664`;
@@ -93,6 +93,6 @@ export {
   soundDeath,
   soundEnemyAttack,
   soundStageUp,
-  soundResolutionChange,
+  soundSettingChange,
   soundMenuMusic,
 };
