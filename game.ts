@@ -83,12 +83,11 @@ const ENEMY_DAMAGE = 0.22;
 const MEDKIT_HEAL_AMOUNT = 13;
 
 enum GameState {
-  RES_MENU,
   MENU,
   PLAY,
 }
 
-var gameState = GameState.RES_MENU;
+var gameState = GameState.MENU;
 
 interface Player {
   position: Vec3;
@@ -99,15 +98,8 @@ interface Player {
   yaw: number;
   lastBulletTime: number;
 }
-const player: Player = {
-  position: [0, 0, 0],
-  velocity: [0, 0, 0],
-  direction: [1, 0, 0],
-  health: PLAYER_MAX_HEALTH,
-  bobTick: 0,
-  yaw: 0,
-  lastBulletTime: 0,
-};
+var player: Player;
+var playerDead: boolean = false;
 
 interface Enemy {
   speed: number;
@@ -441,18 +433,31 @@ function tickEnemySpawn() {
 }
 
 function tickGame() {
-  startTime += 1 / FPS;
+  if (player.health <= 0) {
+    playerDead = true;
+    setTimeout(() => {
+      gameState = GameState.MENU;
+    }, 5000);
+  }
 
-  tickPlayer();
-  tickEnemies();
-  tickBullets();
-  tickMedkit();
-  tickExplosions();
-  tickPoison();
-  tickEnemySpawn();
+  if (!playerDead) {
+    startTime += 1 / FPS;
+
+    tickPlayer();
+    tickEnemies();
+    tickBullets();
+    tickMedkit();
+    tickExplosions();
+    tickPoison();
+    tickEnemySpawn();
+  } else {
+    if (player.direction[1] >= -Math.PI / 2) {
+      player.direction[1] -= 0.2;
+    }
+  }
 }
 
-function tickResMenu() {
+function tickMenu() {
   startTime += 1 / FPS;
 }
 
@@ -506,6 +511,23 @@ function initInput(api: WebEngineAPI) {
 }
 
 function initGame() {
+  player = {
+    position: [0, 0, 0],
+    velocity: [0, 0, 0],
+    direction: [1, 0, 0],
+    health: PLAYER_MAX_HEALTH,
+    bobTick: 0,
+    yaw: 0,
+    lastBulletTime: 0,
+  };
+  playerDead = false;
+  enemies = [];
+  bullets = [];
+  explosions = [];
+  medkit = null;
+  walls = [];
+  startTime = 0;
+
   spawnWalls();
 }
 
@@ -520,9 +542,9 @@ function playerBob() {
 
 function inputLeftUp() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
+      gameState = GameState.PLAY;
+      initGame();
       break;
     case GameState.PLAY:
       playerBob();
@@ -536,8 +558,6 @@ function inputLeftUp() {
 
 function inputLeftDown() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
       break;
     case GameState.PLAY:
@@ -552,8 +572,6 @@ function inputLeftDown() {
 
 function inputLeftLeft() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
       break;
     case GameState.PLAY:
@@ -571,8 +589,6 @@ function inputLeftLeft() {
 
 function inputLeftRight() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
       break;
     case GameState.PLAY:
@@ -590,10 +606,8 @@ function inputLeftRight() {
 
 function inputRightUp() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      incrementRes();
-      break;
     case GameState.MENU:
+      incrementRes();
       break;
     case GameState.PLAY:
       if (startTime - player.lastBulletTime >= BULLET_COOLDOWN_THRESHOLD) {
@@ -606,10 +620,8 @@ function inputRightUp() {
 
 function inputRightDown() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      decrementRes();
-      break;
     case GameState.MENU:
+      decrementRes();
       break;
     case GameState.PLAY:
       player.yaw -= Math.PI;
@@ -619,8 +631,6 @@ function inputRightDown() {
 
 function inputRightLeft() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
       break;
     case GameState.PLAY:
@@ -631,8 +641,6 @@ function inputRightLeft() {
 
 function inputRightRight() {
   switch (gameState) {
-    case GameState.RES_MENU:
-      break;
     case GameState.MENU:
       break;
     case GameState.PLAY:
@@ -760,7 +768,7 @@ function renderGame() {
   }
 }
 
-function renderResMenu() {
+function renderMenu() {
   fbClearColor(fb, 0);
 
   let mv = mat4Identity();
@@ -826,7 +834,7 @@ function renderGameText(api: WebEngineAPI) {
   });
 }
 
-function renderResMenuText(api: WebEngineAPI) {
+function renderMenuText(api: WebEngineAPI) {
   api.clearText();
 
   api.addText("ROOM", {
@@ -871,11 +879,9 @@ function initEngine(api: WebEngineAPI) {
 
   setInterval(() => {
     switch (gameState) {
-      case GameState.RES_MENU:
-        tickResMenu();
-        renderResMenu();
-        break;
       case GameState.MENU:
+        tickMenu();
+        renderMenu();
         break;
       case GameState.PLAY:
         tickGame();
@@ -889,10 +895,8 @@ function initEngine(api: WebEngineAPI) {
     api.setMap(fb.map);
 
     switch (gameState) {
-      case GameState.RES_MENU:
-        renderResMenuText(api);
-        break;
       case GameState.MENU:
+        renderMenuText(api);
         break;
       case GameState.PLAY:
         renderGameText(api);
