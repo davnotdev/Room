@@ -31,8 +31,7 @@
 // Game logic is in the game.ts section.
 // You can create your own models in the models.ts section.
 // Sounds are at the very bottom.
-// Also, don't touch graphics.ts unless if you really know what you're doing.
-// More information will be on the Github!
+// If you touch graphics.ts, try not to freeze the game!
 //
 
 //

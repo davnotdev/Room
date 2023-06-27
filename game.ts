@@ -62,6 +62,13 @@ import {
 // Well, ROOM was written in typescript and compiled into javascript.
 // The original source is at https://github.com/davnotdev/Room.
 //
+// Want to edit the game?
+// Go ahead! 
+// Game logic is in the game.ts section.
+// You can create your own models in the models.ts section.
+// Sounds are at the very bottom.
+// If you touch graphics.ts, try not to freeze the game!
+//
 
 // -- Framebuffer Globals --
 
