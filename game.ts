@@ -58,31 +58,34 @@ var tileYCount = 0;
 const RES_LEVELS = [
   [1, 1],
   [2, 2],
+  [3, 2],
+  [3, 3],
   [4, 3],
+  [4, 4],
   [5, 4],
   [6, 6],
   [8, 8],
   [10, 8],
   [20, 16],
 ];
-var selectedResLevel = 3;
-
-const ENEMY_CAP = 15;
+var selectedResLevel = 6;
 
 const BULLET_DAMAGE = 40;
-const BULLET_COOLDOWN_THRESHOLD = 0.14;
+const BULLET_COOLDOWN_THRESHOLD = 0.12;
 
 var fb: Framebuffer;
 recreateFramebuffer();
 
 const PLAYER_MAX_HEALTH = 50;
-const PLAYER_POISON_TICK = 0.012;
+const PLAYER_POISON_TICK = 0.01;
 
-const ENEMY_SPAWN_FREQUENCY_STAGES = [0.05, 0.1, 0.18, 0.25, 3];
+const ENEMY_CAP_STAGES = [3, 5, 20, 30, 999];
+const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 10];
 const KILL_SCREEN_STAGE = 4;
 
-const ENEMY_DAMAGE = 0.22;
-const MEDKIT_HEAL_AMOUNT = 12;
+const ENEMY_DAMAGE = 0.15;
+const ENEMY_MAX_DODGE = 0.3;
+const MEDKIT_HEAL_AMOUNT = 18;
 
 enum GameState {
   MENU,
@@ -108,6 +111,7 @@ interface Enemy {
   health: number;
   color: number;
   position: Vec3;
+  dodgeEntropy: number;
 }
 var enemies: Enemy[] = [];
 
@@ -154,7 +158,7 @@ const MAP_WALL_TO_WALL_MIN_DISTANCE = 20;
 let startTime = 0;
 
 function getStageNumber() {
-  if (startTime <= 15) {
+  if (startTime <= 20) {
     return 0;
   } else if (startTime <= 100) {
     return 1;
@@ -281,17 +285,25 @@ function spawnMedkitHealPopup() {
 }
 
 function spawnEnemy(position: Vec3) {
-  if (enemies.length >= ENEMY_CAP && getStageNumber() != KILL_SCREEN_STAGE)
+  let stage = getStageNumber();
+  if (enemies.length >= ENEMY_CAP_STAGES[stage] && stage != KILL_SCREEN_STAGE)
     return;
 
-  let randomSpeed = Math.random() * 0.08;
+  let randomSpeed = Math.random() * 0.4 + 0.1;
   let randomHealth = Math.random() * 100 + 40;
   let numColors = [0, 3, 5, 7, 4, 6, 8, 9];
   let randomColor = Math.floor(Math.random() * 8);
+  let randomDodge;
+  if (Math.random() >= 0.8) {
+    randomDodge = 0;
+  } else {
+    randomDodge = Math.random() * ENEMY_MAX_DODGE;
+  }
   let enemy = {
     speed: randomSpeed,
     health: randomHealth,
     color: numColors[randomColor],
+    dodgeEntropy: randomDodge,
     position,
   };
   enemies.push(enemy);
@@ -341,6 +353,7 @@ function tickPlayer() {
   if (collisionWall == null) {
     player.position = next_position;
   } else {
+    const PLAYER_WALL_BOUNCE_SCALAR = 0.8;
     // Over-engineered bouncing.
     let wallToPlayer = vecNormalize(
       vecSubVec(collisionWall.position, player.position)
@@ -368,7 +381,7 @@ function tickPlayer() {
       vecMulScalar(normal, -2 * vecDot(normal, player.velocity)),
       player.velocity
     );
-    player.velocity = vecMulScalar(reflected, 0.5);
+    player.velocity = vecMulScalar(reflected, PLAYER_WALL_BOUNCE_SCALAR);
   }
 }
 
@@ -390,19 +403,24 @@ function tickBullets() {
 }
 
 function tickEnemies() {
-  const ENEMY_MAX_CLOSE_UP = 1.7;
-  const ENEMY_SPEED_INCREMENT = 0.0003 * Math.abs(getStageNumber() - 2);
+  const ENEMY_MAX_CLOSE_UP = 1.8;
+  const ENEMY_SPEED_INCREMENT = 0.0004 * getStageNumber();
   for (let i in enemies) {
     let enemy = enemies[i];
 
     enemy.speed += ENEMY_SPEED_INCREMENT;
 
     if (vecDistance(player.position, enemy.position) >= ENEMY_MAX_CLOSE_UP) {
-      let direction = vecSubVec(player.position, enemy.position);
+      let direction = vecNormalize(vecSubVec(player.position, enemy.position));
+      let dodgeDirection = vecMulScalar(
+        vec3CrossProduct(direction, [0, 1, 0]),
+        Math.sin(startTime * 6 * enemy.dodgeEntropy) * enemy.dodgeEntropy
+      );
       let next_position = vecAddVec(
         enemy.position,
         vecMulScalar(direction, enemy.speed)
       );
+      next_position = vecAddVec(next_position, dodgeDirection);
       if (getCollisionWall(enemy.position) == null) {
         enemy.position = next_position;
       } else {
@@ -576,7 +594,7 @@ function initGame() {
     position: [0, 0, 0],
     velocity: [0, 0, 0],
     direction: [1, 0, 0],
-    health: PLAYER_MAX_HEALTH,
+    health: PLAYER_MAX_HEALTH - MEDKIT_HEAL_AMOUNT,
     bobTick: 0,
     yaw: 0,
     lastBulletTime: 0,
@@ -900,7 +918,7 @@ function renderGameText(api: WebEngineAPI) {
     api.addText(`+${MEDKIT_HEAL_AMOUNT}`, {
       x: 8,
       y: 8 - Math.floor(popup.y),
-      color: "8",
+      color: "4",
     });
   }
 }
