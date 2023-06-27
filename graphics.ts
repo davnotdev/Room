@@ -426,7 +426,7 @@ function fbFillTriangle(
     for (
       var x = x_left[Math.floor(y - a[1])];
       x <= x_right[Math.floor(y - a[1])];
-      x += 0.3
+      x += 1
     ) {
       // Crude estimation of depth.
       fbPut(fb, x, y, enableDepth ? a[2] : null, color);
