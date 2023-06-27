@@ -1,3 +1,3 @@
 export default {
-  base: "davnotdev.github.io/Room"
+  base: "/Room"
 }
