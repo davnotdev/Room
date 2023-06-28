@@ -1,6 +1,8 @@
 # ROOM
 
-It's not in the sprig gallery (yet), so [here's a demo instead](https://davnotdev.github.io/Room).
+[ROOM is in the sprig gallery](https://sprig.hackclub.com/gallery/ROOM).
+(Woohoo!)
+You can also find a [demo here](https://davnotdev.github.io/Room).
 
 ```
 //   ____    _____   _____
