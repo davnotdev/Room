@@ -122,7 +122,7 @@ function fbNew(tilesXCount: number, tilesYCount: number): Framebuffer {
 
   let fbDepth: Array<Depth> = [];
   for (let i = 0; i < width * height; i++) {
-    fbColor.push(0);
+    fbDepth.push(0);
   }
 
   let map = "\n";

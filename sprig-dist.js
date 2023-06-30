@@ -90,7 +90,7 @@ const ENEMY_PLAYER_SPAWN_MIN_RADIUS = 60;
 const ENEMY_PLAYER_SPAWN_MAX_RADIUS = 350;
 var enemies = [];
 // -- Stage Globals --
-const ENEMY_CAP_STAGES = [3, 5, 8, 20, 30, 40, 9999];
+const ENEMY_CAP_STAGES = [3, 5, 8, 10, 15, 18, 50];
 const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 0.4, 0.5, 10];
 const KILL_SCREEN_STAGE = 6;
 function getStageNumber() {
@@ -983,7 +983,7 @@ function fbNew(tilesXCount, tilesYCount) {
     }
     let fbDepth = [];
     for (let i = 0; i < width * height; i++) {
-        fbColor.push(0);
+        fbDepth.push(0);
     }
     let map = "\n";
     for (let yi = 0; yi < tilesYCount; yi++) {

@@ -168,7 +168,7 @@ var enemies: Enemy[] = [];
 
 // -- Stage Globals --
 
-const ENEMY_CAP_STAGES = [3, 5, 8, 20, 30, 40, 9999];
+const ENEMY_CAP_STAGES = [3, 5, 8, 10, 15, 18, 50];
 const ENEMY_SPAWN_FREQUENCY_STAGES = [0.03, 0.1, 0.15, 0.3, 0.4, 0.5, 10];
 const KILL_SCREEN_STAGE = 6;
 
