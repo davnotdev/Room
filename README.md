@@ -4,6 +4,9 @@
 (Woohoo!)
 You can also find a [demo here](https://davnotdev.github.io/Room).
 
+![game0.png](./assets/game0.png)
+![game1.png](./assets/game1.png)
+
 ```
 //   ____    _____   _____
 // /\  _`\ /\  __`\/\  __`\  /'\_/`\
@@ -13,8 +16,6 @@ You can also find a [demo here](https://davnotdev.github.io/Room).
 //    \ \_\ \_\ \_____\ \_____\ \_\\ \_\
 //     \/_/\/ /\/_____/\/_____/\/_/ \/_/
 //
-// This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig.
-//
 // /   w   [oooo]   i   \
 // \ a s d [oooo] j k l /
 //
@@ -22,15 +23,16 @@ You can also find a [demo here](https://davnotdev.github.io/Room).
 // s = Go Left      j = Look Left
 // d = Go Right     l = Look Right
 // a = Backward     k = Look Behind
-//
-// Trapped in a claustrophobic room, you must survive for as long as possible.
-// Your health slowly drains, so you must run around and collect medkits.
-// Be sure to avoid the spin-y people.
-// They are not your friend.
-//
 ```
 
-> [Sprig's website](https://sprig.hackclub.com/).
+This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig, an amazing game console built by the folks at hack club.
+
+In ROOM, your goal is to navigate a maze of walls, picking up med kits while your health slowly drains.
+Evade and kill the spinning people.
+Your score is determined by your survival time.
+Good luck!
+
+> Note that ROOM cannot run on a physical sprig due to hardware limitations!
 
 ## Distribution
 
@@ -38,7 +40,7 @@ You can also find a [demo here](https://davnotdev.github.io/Room).
 The rest of the code is made for the browser.
 Though, sprig-ifying it is trivial.
 
-## Notes for Editors
+## Code Structure
 
 The sprig is not designed for 3D games.
 In fact, this game goes against the spirit of sprig.
