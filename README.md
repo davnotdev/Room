@@ -4,6 +4,15 @@
 (Woohoo!)
 You can also find a [demo here](https://davnotdev.github.io/Room).
 
+This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig, an amazing game console built by the folks at hack club.
+
+In ROOM, your goal is to navigate a maze of walls, picking up med kits while your health slowly drains.
+Evade and kill the spinning people.
+Your score is determined by your survival time.
+Good luck!
+
+> Note that ROOM cannot run on a physical sprig due to hardware limitations!
+
 ![game0.png](./assets/game0.png)
 ![game1.png](./assets/game1.png)
 
@@ -24,15 +33,6 @@ You can also find a [demo here](https://davnotdev.github.io/Room).
 // d = Go Right     l = Look Right
 // a = Backward     k = Look Behind
 ```
-
-This is ROOM, a DOOM inspired 3D [pew pew]-er, built for the sprig, an amazing game console built by the folks at hack club.
-
-In ROOM, your goal is to navigate a maze of walls, picking up med kits while your health slowly drains.
-Evade and kill the spinning people.
-Your score is determined by your survival time.
-Good luck!
-
-> Note that ROOM cannot run on a physical sprig due to hardware limitations!
 
 ## Distribution
 
